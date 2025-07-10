@@ -5,6 +5,3 @@ flake8==6.1.0
 mypy==1.7.1
 pre-commit==3.6.0
 
-# Version numbers are omitted to allow latest compatible versions,
-#ensuring easier installation on different systems (especially with Python 3.13).
-#This is done because during installation, Streamlit had strict version,requirements for NumPy, and did not support the latest NumPy version (e.g., 2.x).
