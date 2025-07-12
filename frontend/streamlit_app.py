@@ -7,13 +7,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="Data Leakage Monitoring System",
+    page_title="OSINT Data Leakage Monitor",
     page_icon="🔍",
     layout="wide"
 )
 
-st.title("🔍 Data Leakage Monitoring System")
-st.markdown("A unified platform for monitoring data leakage across multiple sources")
+st.title("🔍 OSINT Data Leakage Monitor")
+st.markdown("A unified platform for monitoring data leakage across multiple OSINT sources")
 
 # Test backend connection
 try:
@@ -34,9 +34,9 @@ page = st.sidebar.selectbox(
 
 if page == "Scanner":
     st.header("🔍 Data Leakage Scanner")
-    st.markdown("Select data type and input information to scan across all platforms")
+    st.markdown("Select data type and input information to scan across all OSINT platforms")
     
-    # Data type selection with predefined regex patterns
+    # Data type selection - simplified without regex patterns display
     col1, col2 = st.columns([1, 2])
     
     with col1:
@@ -55,21 +55,6 @@ if page == "Scanner":
                 "Custom Regex"
             ]
         )
-        
-        # Display regex pattern for selected data type
-        regex_patterns = {
-            "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-            "Phone Number": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
-            "Username": r"^[a-zA-Z0-9_-]{3,16}$",
-            "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-            "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-            "Credit Card Number": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
-            "IC Number": r"^\d{6}-\d{2}-\d{4}$",
-            "API Keys/Tokens": r"^[A-Za-z0-9+/=]{20,}$",
-            "Custom Regex": ""
-        }
-        
-        st.info(f"**Pattern:** `{regex_patterns[data_type]}`")
     
     with col2:
         st.subheader("Input Data")
@@ -81,32 +66,30 @@ if page == "Scanner":
             search_data = st.text_area("Enter data to search:", height=100, 
                                      placeholder=f"Enter {data_type.lower()} to search for...")
         
-        # Tools selection
-        st.subheader("Data Gathering Tools")
-        st.markdown("All tools will be used automatically:")
-        
-        col_tool1, col_tool2 = st.columns(2)
-        with col_tool1:
-            st.checkbox("🔍 GitLeaks", value=True, disabled=True, help="Git repository scanning")
-            st.checkbox("🔍 TruffleHog", value=True, disabled=True, help="Secret scanning")
-            st.checkbox("🔍 theHarvester", value=True, disabled=True, help="Email/domain harvesting")
-        
-        with col_tool2:
-            st.checkbox("🔍 SpiderFoot", value=True, disabled=True, help="Automated reconnaissance")
-            st.checkbox("🔍 Sherlock", value=True, disabled=True, help="Social media username search")
-            st.checkbox("🔍 Custom Scanners", value=True, disabled=True, help="Additional scanning tools")
-        
         # Scan button
         st.markdown("---")
         scan_button = st.button("🚀 Start Comprehensive Scan", type="primary", use_container_width=True)
         
         if scan_button:
             if search_data:
+                # Regex patterns for validation (hidden from UI)
+                regex_patterns = {
+                    "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                    "Phone Number": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+                    "Username": r"^[a-zA-Z0-9_-]{3,16}$",
+                    "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                    "Credit Card Number": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
+                    "IC Number": r"^\d{6}-\d{2}-\d{4}$",
+                    "API Keys/Tokens": r"^[A-Za-z0-9+/=]{20,}$",
+                    "Custom Regex": ""
+                }
+                
                 # Validate input against regex pattern
                 if data_type != "Custom Regex":
                     pattern = regex_patterns[data_type]
                     if not re.search(pattern, search_data.strip()):
-                        st.error(f"❌ Input doesn't match {data_type} pattern")
+                        st.error(f"❌ Input doesn't match {data_type} format")
                         st.stop()
                 else:
                     if not custom_regex:
@@ -136,6 +119,156 @@ if page == "Scanner":
                     
             else:
                 st.error("❌ Please enter data to search")
+
+elif page == "About Tools":
+    st.header("🛠️ OSINT Tools Overview")
+    st.markdown("Learn about the powerful tools used in our comprehensive scanning platform")
+    
+    # Tool categories
+    st.subheader("🔍 Our Scanning Arsenal")
+    
+    # GitLeaks
+    with st.expander("🔍 GitLeaks - Git Repository Scanner"):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Purpose:**")
+            st.markdown("Git repository scanning for secrets and sensitive data")
+            st.markdown("**Status:** ✅ Active")
+        with col2:
+            st.markdown("**What it scans:**")
+            st.markdown("- Git repositories and commit history")
+            st.markdown("- API keys and authentication tokens")
+            st.markdown("- Passwords and secrets in code")
+            st.markdown("- Configuration files with sensitive data")
+            st.markdown("- Database connection strings")
+    
+    # TruffleHog
+    with st.expander("🔍 TruffleHog - Advanced Secret Scanner"):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Purpose:**")
+            st.markdown("Advanced secret scanning with high accuracy")
+            st.markdown("**Status:** ✅ Active")
+        with col2:
+            st.markdown("**What it scans:**")
+            st.markdown("- High-entropy strings and secrets")
+            st.markdown("- OAuth tokens and API keys")
+            st.markdown("- Private keys and certificates")
+            st.markdown("- Database credentials")
+            st.markdown("- Cloud service credentials")
+    
+    # theHarvester
+    with st.expander("🔍 theHarvester - Email & Domain Intelligence"):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Purpose:**")
+            st.markdown("Email and domain harvesting from public sources")
+            st.markdown("**Status:** ✅ Active")
+        with col2:
+            st.markdown("**What it scans:**")
+            st.markdown("- Email addresses from search engines")
+            st.markdown("- Subdomains and DNS records")
+            st.markdown("- Public directory listings")
+            st.markdown("- Social media mentions")
+            st.markdown("- Professional networking sites")
+    
+    # SpiderFoot
+    with st.expander("🔍 SpiderFoot - Automated Reconnaissance"):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Purpose:**")
+            st.markdown("Comprehensive automated reconnaissance")
+            st.markdown("**Status:** ✅ Active")
+        with col2:
+            st.markdown("**What it scans:**")
+            st.markdown("- Domain and IP address intelligence")
+            st.markdown("- Dark web mentions")
+            st.markdown("- Social media profiles")
+            st.markdown("- Data breach databases")
+            st.markdown("- Public records and documents")
+    
+    # Sherlock
+    with st.expander("🔍 Sherlock - Social Media Hunter"):
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Purpose:**")
+            st.markdown("Social media username search across platforms")
+            st.markdown("**Status:** ✅ Active")
+        with col2:
+            st.markdown("**What it scans:**")
+            st.markdown("- 400+ social media platforms")
+            st.markdown("- Professional networking sites")
+            st.markdown("- Gaming platforms")
+            st.markdown("- Forums and communities")
+            st.markdown("- Dating and lifestyle platforms")
+    
+    st.markdown("---")
+    
+    # Scanning Process
+    st.subheader("⚙️ How Our Scanning Works")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**1. Input Processing**")
+        st.markdown("- Validates your input format")
+        st.markdown("- Prepares data for scanning")
+        st.markdown("- Selects appropriate tools")
+    
+    with col2:
+        st.markdown("**2. Parallel Scanning**")
+        st.markdown("- Runs all tools simultaneously")
+        st.markdown("- Monitors progress in real-time")
+        st.markdown("- Handles errors gracefully")
+    
+    with col3:
+        st.markdown("**3. Results Analysis**")
+        st.markdown("- Aggregates findings from all tools")
+        st.markdown("- Removes duplicates")
+        st.markdown("- Provides risk assessment")
+    
+    st.markdown("---")
+    
+    # Data Types Supported
+    st.subheader("📊 Supported Data Types")
+    
+    data_types_info = {
+        "Email Address": "Comprehensive email scanning across platforms and databases",
+        "Phone Number": "Phone number exposure checking and verification",
+        "Username": "Username availability and exposure analysis",
+        "Domain Name": "Domain intelligence and subdomain discovery",
+        "IP Address": "IP address reputation and exposure analysis",
+        "Credit Card Number": "Credit card exposure in data breaches (masked results)",
+        "IC Number": "Malaysian IC number exposure monitoring",
+        "API Keys/Tokens": "API key and authentication token exposure",
+        "Custom Regex": "Custom pattern matching for specific data formats"
+    }
+    
+    for data_type, description in data_types_info.items():
+        st.markdown(f"**{data_type}:** {description}")
+    
+    st.markdown("---")
+    
+    # Security & Privacy
+    st.subheader("🔒 Security & Privacy")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Data Protection:**")
+        st.markdown("- All scans are encrypted")
+        st.markdown("- No data stored permanently")
+        st.markdown("- Results auto-deleted after 30 days")
+        st.markdown("- No third-party data sharing")
+    
+    with col2:
+        st.markdown("**Ethical Scanning:**")
+        st.markdown("- Only public data sources")
+        st.markdown("- Respects robots.txt files")
+        st.markdown("- Rate-limited requests")
+        st.markdown("- No illegal or harmful activities")
+    
+    st.success("🛡️ **Your Privacy Matters:** We only scan publicly available information and never store your sensitive data.")
 
 elif page == "Scan History":
     st.header("📊 Scan History")
