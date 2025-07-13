@@ -40,7 +40,7 @@ async def get_supported_data_types():
             },
             "phone": {
                 "name": "Phone Number",
-                "pattern": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+                "pattern": r"^(\+?60|0)1[0-9]{1}-?[0-9]{7,8}$",
                 "description": "US phone number format"
             },
             "username": {
