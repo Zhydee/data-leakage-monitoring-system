@@ -1,4 +1,4 @@
-# OSINT Data Leakage Monitoring System
+# Data Leakage Monitoring System
 
 A comprehensive OSINT reconnaissance tool for monitoring data leakage with secure, scalable architecture.
 

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from app.api.routes import scan # Import the scan router
 import os
 
 load_dotenv()
@@ -129,3 +130,5 @@ async def get_scan_status(scan_id: str):
 async def get_scan_history():
     """Get scan history"""
     return {"message": "Scan history endpoint will be implemented in Week 2"}
+
+app.include_router(scan.router, prefix="/scan") 
