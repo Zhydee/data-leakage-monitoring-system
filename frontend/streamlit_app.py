@@ -7,13 +7,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 st.set_page_config(
-    page_title="OSINT Data Leakage Monitor",
+    page_title="Data Leakage Monitoring System",
     page_icon="🔍",
     layout="wide"
 )
 
-st.title("🔍 OSINT Data Leakage Monitor")
-st.markdown("A unified platform for monitoring data leakage across multiple OSINT sources")
+st.title("🔍 Data Leakage Monitoring System")
+st.markdown("A unified platform for monitoring data leakage across multiple open sources")
 
 # Test backend connection
 try:
@@ -105,7 +105,7 @@ if page == "Scanner":
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
-                    tools = ["GitLeaks", "TruffleHog", "theHarvester", "SpiderFoot", "Sherlock"]
+                    tools = ["GitLeaks", "TruffleHog", "theHarvester", "SpiderFoot", "Sherlock", "LeakCheck"]
                     
                     for i, tool in enumerate(tools):
                         status_text.text(f"Running {tool}...")
@@ -201,6 +201,20 @@ elif page == "About Tools":
             st.markdown("- Gaming platforms")
             st.markdown("- Forums and communities")
             st.markdown("- Dating and lifestyle platforms")
+
+         # Leakcheck
+        with st.expander("🔍 Leakcheck.io - Email Breach Lookup"):
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.markdown("**Purpose:**")
+                st.markdown("Checks if your email has appeared in public data breaches")
+                st.markdown("**Status:** ✅ Active")
+            with col2:
+                st.markdown("**What it scans:**")
+                st.markdown("- Leaked emails and password hashes")
+                st.markdown("- Sources like Exploit.in, Collection1, etc.")
+                st.markdown("- Real-time breach database using free API")
+
     
     st.markdown("---")
     
@@ -272,7 +286,27 @@ elif page == "About Tools":
 
 elif page == "Scan History":
     st.header("📊 Scan History")
-    st.markdown("View and manage your previous scans")
+    st.markdown("Recent scans from the database")
+
+    try:
+        res = requests.get("http://localhost:8000/scan-history")
+        if res.status_code == 200:
+            scans = res.json()
+            for scan in scans:
+                with st.expander(f"🔎 Scan ID {scan['scan_id']} - {scan['search_data']} ({scan['data_type']})"):
+                    st.markdown(f"**Timestamp:** {scan['timestamp']}")
+                    st.markdown(f"**Status:** `{scan['status']}`")
+                    st.markdown("**Results:**")
+                    for tool, result in scan["results"].items():
+                        st.markdown(f"- **{tool}**")
+                        st.json(result["data"])
+                        st.caption(f"Confidence: {result['confidence']} | Severity: {result['severity']}")
+        else:
+            st.error("❌ Failed to fetch scan history.")
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
+
+    
     
     # Placeholder for scan history table
     st.info("Scan history functionality will be implemented in upcoming weeks")
@@ -291,7 +325,8 @@ elif page == "Scan History":
             "trufflehog": {"found": 3, "secrets": ["api_key", "password"]},
             "theharvester": {"found": 10, "emails": ["email1", "email2"]},
             "spiderfoot": {"found": 8, "domains": ["domain1", "domain2"]},
-            "sherlock": {"found": 12, "platforms": ["twitter", "github"]}
+            "sherlock": {"found": 12, "platforms": ["twitter", "github"]},
+            "leakcheck": {"found": 3, "breaches": ["exploit.in", "collection1"]}
         }
     }
     """, language="json")

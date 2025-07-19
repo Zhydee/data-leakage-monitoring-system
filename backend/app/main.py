@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from app.api.routes import scan # Import the scan router
+load_dotenv(dotenv_path=".env")
 import os
+from app.api.routes import scan # Import the scan router
+from app.api.routes import history
 
 load_dotenv()
 
@@ -20,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(scan.router, prefix="/scan")
+app.include_router(history.router)
 
 @app.get("/")
 async def root():

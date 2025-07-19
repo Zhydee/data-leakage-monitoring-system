@@ -1,6 +1,6 @@
 # Data Leakage Monitoring System
 
-A comprehensive OSINT reconnaissance tool for monitoring data leakage with secure, scalable architecture.
+A comprehensive  tool for monitoring data leakage with secure architecture. This project is system that combined the result of all scanning tools into one dashboard for user
 
 ## Quick Start
 
