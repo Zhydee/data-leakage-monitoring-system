@@ -70,6 +70,39 @@ async def start_scan_job(request: ScanRequest) -> int:
                     source_url="https://github.com/sherlock-project/sherlock"
                 )
 
+
+                 # ✅ Run leakcheck if type is email
+        if data_type == "email":
+            print("⚙️ Running Leakcheck...")
+            result = check_leakcheck(request.search_data)
+            print("🔍 Leakcheck result:", result)
+            models.ToolStatus.update_status(
+                db, scan_id, "leakcheck",
+                "completed" if result["success"] else "failed",
+                result.get("error", result.get("note"))
+            )
+
+            if result["success"]:
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="leakcheck",
+                    result=result.get("breaches", []),
+                    confidence=0.9,
+                    severity="medium",
+                    result_type="json",
+                    source_url="https://leakcheck.io"
+                )
+            else:
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="leakcheck",
+                    result={"error": result.get("error", "No breaches found")},
+                    confidence=0.0,
+                    severity="low",
+                    result_type="text",
+                    source_url="https://leakcheck.io"
+                )
+        
         # Simulate other tools
         for tool in ["gitleaks", "trufflehog", "google_dork", "spiderfoot"]:
             models.ScanResult.create(

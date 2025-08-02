@@ -1,10 +1,27 @@
 import streamlit as st
+from streamlit_option_menu import option_menu
 import requests
 import os
 import re
 from dotenv import load_dotenv
 
 load_dotenv()
+           
+# Map display name to backend name
+backend_data_type_map = {
+"Email Address": "email",
+"Phone Number": "phone",
+"Username": "username",
+"Domain Name": "domain",
+"IP Address": "ip",
+"Credit Card Number": "credit_card",
+"IC Number": "ic",
+"API Keys/Tokens": "api_key",
+"Custom Regex": "custom"
+  }
+# Reverse map to display correct label in Scan History
+display_name_map = {v: k for k, v in backend_data_type_map.items()}
+           
 
 st.set_page_config(
     page_title="Data Leakage Monitoring System",
@@ -12,8 +29,16 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔍 Data Leakage Monitoring System")
-st.markdown("A unified platform for monitoring data leakage across multiple open sources")
+st.markdown("""
+<h1 style='text-align: center; color: white; font-size: 40px; margin-top: -90px;'>
+🔍 <span style='color:#f39c12;'>Data Leakage Monitoring System</span>
+</h1>
+<p style='text-align: center; color: #CCCCCC; font-size: 16px; margin-top: -10px;'>
+A unified platform for monitoring data leakage across multiple open sources.
+</p>
+""", unsafe_allow_html=True)
+
+
 
 # Test backend connection
 try:
@@ -26,13 +51,38 @@ except Exception as e:
     st.error(f"❌ Backend connection error: {str(e)}")
 
 # Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.selectbox(
-    "Select Page",
-    ["Scanner", "About Tools", "Scan History", "Reports"]
-)
+from streamlit_option_menu import option_menu
 
-if page == "Scanner":
+with st.sidebar:
+        # Logo and title
+    st.markdown("## Data Leakage Monitoring")
+    selected = option_menu(
+        menu_title=None,
+        options=["Scanner", "About Tools", "Scan History", "Reports"],
+        icons=["search", "tools", "clock-history", "bar-chart-line"],
+        default_index=0,
+        styles={
+            "container": {"padding": "10px", "background-color": "#1e1e1e", "border-radius": "8px"},
+            "icon": {"color": "orange", "font-size": "18px"},
+            "nav-link": {
+                "font-size": "15px",
+                "text-align": "left",
+                "margin": "5px",
+                "padding": "8px",
+                "color": "white",
+                "border-radius": "5px"
+            },
+            "nav-link-selected": {
+                "background-color": "#4b4b4b",
+                "font-weight": "bold",
+                "color": "white"
+            }
+        }
+    )
+
+
+
+if selected == "Scanner":
     st.header("🔍 Data Leakage Scanner")
     st.markdown("Select data type and input information to scan across all OSINT platforms")
     
@@ -53,18 +103,43 @@ if page == "Scanner":
                 "IC Number",
                 "API Keys/Tokens",
                 "Custom Regex"
-            ]
+            ],
+             help="Select the type of data you want to scan for leaks. E.g., an email address, username, or IC number."
         )
     
     with col2:
         st.subheader("Input Data")
         
         if data_type == "Custom Regex":
-            custom_regex = st.text_input("Enter custom regex pattern:", placeholder="e.g., ^[A-Z]{2,3}-\d{4,6}$")
-            search_data = st.text_area("Enter data to search:", height=100, placeholder="Enter the data you want to search for...")
+            custom_regex = st.text_input(
+                "Enter custom regex pattern:",
+                placeholder="e.g., ^[A-Z]{2,3}-\\d{4,6}$",
+                help="Define your own pattern using regular expressions."
+            )
+            search_data = st.text_area(
+                "Enter data to search:",
+                height=100,
+                placeholder="Enter the data you want to search for...",
+                help="Paste your list of values (e.g., multiple usernames or IC numbers) to search using your custom regex."
+            )
         else:
-            search_data = st.text_area("Enter data to search:", height=100, 
-                                     placeholder=f"Enter {data_type.lower()} to search for...")
+            help_messages = {
+                "Email Address": "Check if your email has been leaked in public data breaches. e.g., user@example.com",
+                "Phone Number": "Find out if your phone number is exposed in public sources. Format: 012-3456789",
+                "Username": "Scan the internet for social media and forum accounts matching a username.",
+                "Domain Name": "Discover if a domain (e.g., example.com) has been associated with leaked data.",
+                "IP Address": "Check if your IP address is publicly exposed or mentioned.",
+                "Credit Card Number": "Scan for potential credit card leaks (input is masked and protected).",
+                "IC Number": "Monitor Malaysian IC number exposure. Format: xxxxxx-xx-xxxx",
+                "API Keys/Tokens": "Scan public platforms for exposed API keys or secret tokens."
+            }
+
+            search_data = st.text_area(
+                "Enter data to search:",
+                height=100,
+                placeholder=f"Enter {data_type.lower()} to search for...",
+                help=help_messages.get(data_type, "Enter the value(s) to search.")
+            )
         
         # Scan button
         st.markdown("---")
@@ -84,7 +159,8 @@ if page == "Scanner":
                     "API Keys/Tokens": r"^[A-Za-z0-9+/=]{20,}$",
                     "Custom Regex": ""
                 }
-                
+     
+                backend_data_type = backend_data_type_map[data_type]
                 # Validate input against regex pattern
                 if data_type != "Custom Regex":
                     pattern = regex_patterns[data_type]
@@ -102,7 +178,7 @@ if page == "Scanner":
                 with st.spinner("🚀 Initiating scan..."):
                     # Placeholder for actual scanning logic
                     payload = {
-                                "data_type": data_type,
+                                "data_type": backend_data_type,
                                 "search_data": search_data.strip()
                     }
 
@@ -126,7 +202,7 @@ if page == "Scanner":
             else:
                 st.error("❌ Please enter data to search")
 
-elif page == "About Tools":
+elif selected == "About Tools":
     st.header("🛠️ OSINT Tools Overview")
     st.markdown("Learn about the powerful tools used in our comprehensive scanning platform")
     
@@ -290,7 +366,7 @@ elif page == "About Tools":
     
     st.success("🛡️ **Your Privacy Matters:** We only scan publicly available information and never store your sensitive data.")
 
-elif page == "Scan History":
+elif selected == "Scan History":
     st.header("📊 Scan History")
     st.markdown("Recent scans from the database")
 
@@ -303,19 +379,46 @@ elif page == "Scan History":
                     st.markdown(f"**Timestamp:** {scan['timestamp']}")
                     st.markdown(f"**Status:** `{scan['status']}`")
                     st.markdown("**Results:**")
+                # Explanations for each tool
+                    tool_descriptions = {
+                        "sherlock": "This tool checks social media websites to see if your username is being used anywhere.",
+                        "leakcheck": "This tool checks if your email has been found in any data leaks or hacked websites.",
+                        "gitleaks": "This tool looks through public code to find things like passwords or private information that were shared by mistake.",
+                        "trufflehog": "This tool searches deeply in code to find secret information that should not be public, like passwords or keys.",
+                        "theharvester": "This tool collects emails and other details about a website from public search engines.",
+                        "spiderfoot": "This tool gathers information about websites, IP addresses, and even mentions on the dark web."
+                    }
+
                     for tool, result in scan["results"].items():
                         st.markdown(f"### 🔧 {tool.capitalize()}")
+
+                        # Show explanation
+                        if tool in tool_descriptions:
+                            with st.expander("ℹ️ What is this tool?"):
+                                st.info(tool_descriptions[tool])
+
+                        # Display results
                         if tool == "sherlock" and isinstance(result["data"], list):
+                            st.markdown(f"🔎 Found `{len(result['data'])}` social profiles:")
                             for url in result["data"]:
                                 st.markdown(f"- 🌐 [View Profile]({url})", unsafe_allow_html=True)
                         else:
-                            st.json(result["data"])
-                        st.caption(f"Confidence: {result['confidence']} | Severity: {result['severity']}")
+                            if tool == "leakcheck":
+                                if result["data"] == []:
+                                    st.info("✅ No breaches found.")
+                                elif isinstance(result["data"], dict) and "error" in result["data"]:
+                                    st.warning(f"⚠️ Error: {result['data']['error']}")
+                                else:
+                                    st.json(result["data"])
+                            else:
+                                st.json(result["data"])
+
+
         else:
             st.error("❌ Failed to fetch scan history.")
     except Exception as e:
         st.error(f"❌ Error: {e}")
-elif page == "Reports":
+elif selected == "Reports":
     st.header("📈 Security Reports")
     st.markdown("View comprehensive analysis of your security scans")
     
