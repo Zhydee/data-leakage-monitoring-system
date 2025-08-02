@@ -1,6 +1,7 @@
 from app.database import Base
 from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, JSON
 from datetime import datetime
+from app.database import SessionLocal
 
 # 👤 Scan Job table
 class ScanJob(Base):
@@ -11,6 +12,26 @@ class ScanJob(Base):
     custom_regex = Column(String, nullable=True)
     status = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    @classmethod
+    def create(cls, data_type, search_data, custom_regex, status, created_at):
+        db = SessionLocal()
+        try:
+            job = cls(
+                data_type=data_type,
+                search_data=search_data,
+                custom_regex=custom_regex,
+                status=status,
+                created_at=created_at
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)  # 🟢 required to get job.id
+            return job
+        except Exception as e:
+            print("❌ ERROR in ScanJob.create():", str(e))
+            return None
+        finally:
+            db.close()
 
 # 📦 Scan Result table
 class ScanResult(Base):
@@ -24,12 +45,66 @@ class ScanResult(Base):
     confidence_score = Column(Float)
     source_url = Column(String(500))
     created_at = Column(DateTime, default=datetime.utcnow)
+    @classmethod
+    def create(cls, job_id, tool_name, result, confidence, severity, result_type, source_url):
+        db = SessionLocal()
+        try:
+            result_record = cls(
+                job_id=job_id,
+                tool_name=tool_name,
+                result_type=result_type,  
+                result_data=result,
+                confidence_score=confidence,
+                severity=severity,
+                source_url=source_url  
+            )
+            db.add(result_record)
+            db.commit()
+            db.refresh(result_record)
+            return result_record
+        except Exception as e:
+            print("❌ ERROR in ScanResult.create():", str(e))
+            return None
+        finally:
+            db.close()
 
 # ⚙️ Tool Status table (already present)
 class ToolStatus(Base):
     __tablename__ = "tool_status"
     id = Column(Integer, primary_key=True, index=True)
-    scan_job_id = Column(Integer, ForeignKey("scan_jobs.id"))
+    job_id = Column(Integer, ForeignKey("scan_jobs.id"))
     tool_name = Column(String)
     status = Column(String)
     error_message = Column(String, nullable=True)
+    @classmethod
+    def create(cls, job_id, tool_name, status):
+        db = SessionLocal()
+        try:
+            tool = cls(
+                job_id=job_id,
+                tool_name=tool_name,
+                status=status
+            )
+            db.add(tool)
+            db.commit()
+            db.refresh(tool)
+            return tool
+        except Exception as e:
+            print("❌ ERROR in ToolStatus.create():", str(e))
+            return None
+        finally:
+            db.close()
+    @classmethod
+    def update_status(cls, db, job_id, tool_name, status, error_message=None):
+        try:
+            record = db.query(cls).filter_by(job_id=job_id, tool_name=tool_name).first()
+            if record:
+                record.status = status
+                record.error_message = error_message
+                db.commit()
+            return True
+            return False
+        except Exception as e:
+            print("❌ ERROR in ToolStatus.update_status():", str(e))
+        return False
+

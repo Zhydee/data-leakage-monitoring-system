@@ -14,6 +14,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app = FastAPI()
+app.include_router(scan.router, prefix="/scan")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -120,20 +123,6 @@ async def get_available_tools():
         }
     }
 
-# Placeholder endpoints for future implementation
-@app.post("/scan/start")
-async def start_scan():
-    """Start a comprehensive OSINT scan"""
-    return {"message": "Scan endpoint will be implemented in Week 2"}
 
-@app.get("/scan/{scan_id}")
-async def get_scan_status(scan_id: str):
-    """Get scan status and results"""
-    return {"message": f"Scan status endpoint for {scan_id} will be implemented in Week 2"}
-
-@app.get("/scans")
-async def get_scan_history():
-    """Get scan history"""
-    return {"message": "Scan history endpoint will be implemented in Week 2"}
 
 app.include_router(scan.router, prefix="/scan") 

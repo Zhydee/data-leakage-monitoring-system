@@ -9,86 +9,86 @@ import re
 import random
 
 async def start_scan_job(request: ScanRequest) -> int:
-    # Create DB session
+    print("🔧 DEBUG: Inside start_scan_job()")
     db = SessionLocal()
 
     try:
-        # Validate data_type
-        if request.data_type not in DATA_TYPE_REGEX_MAP:
+        data_type = request.data_type.strip().lower()
+        print("DEBUG: Normalized data_type =", data_type)
+
+        if data_type not in DATA_TYPE_REGEX_MAP:
+            print("❌ ERROR: Invalid data_type:", data_type)
             return None
 
-        # Validate search_data using regex
-        pattern = request.custom_regex or DATA_TYPE_REGEX_MAP[request.data_type]
+        pattern = request.custom_regex or DATA_TYPE_REGEX_MAP[data_type]
+        print("DEBUG: Using pattern:", pattern)
+
         if not re.match(pattern, request.search_data):
+            print("❌ ERROR: Pattern did not match:", request.search_data)
             return None
 
-        # Insert scan_jobs record
+        print("DEBUG: Creating ScanJob...")
         scan_job = models.ScanJob.create(
-            data_type=request.data_type,
+            data_type=data_type,
             search_data=request.search_data,
             custom_regex=request.custom_regex,
             status="queued",
             created_at=datetime.utcnow()
         )
         scan_id = scan_job.id
+        print("✅ ScanJob created with ID:", scan_id)
 
-        # Define tools to run
+        # Add status entries for all tools
         tools = ["gitleaks", "trufflehog", "google_dork", "spiderfoot", "leakcheck", "sherlock"]
-
-        # Insert initial tool_status as "pending"
         for tool in tools:
+            print(f"⏳ Creating ToolStatus: {tool}")
             models.ToolStatus.create(
-                scan_job_id=scan_id,
+                job_id=scan_id,
                 tool_name=tool,
                 status="pending"
             )
 
-        # Sherlock logic (username only)
-        if request.data_type == "username":
+        # Run sherlock if type is username
+        if data_type == "username":
+            print("⚙️ Running Sherlock...")
             result = run_sherlock(request.search_data)
+            print("🔍 Sherlock result:", result)
+
             models.ToolStatus.update_status(
                 db, scan_id, "sherlock",
                 "completed" if result["success"] else "failed",
-                result.get("error")
+                result.get("error", result.get("note"))
             )
-            if result["success"]:
+            if result["success"] and result.get("found_on"):
                 models.ScanResult.create(
-                    scan_job_id=scan_id,
+                    job_id=scan_id,
                     tool_name="sherlock",
                     result=result["found_on"],
-                    confidence=0.80,
-                    severity="low"
+                    confidence=0.8,
+                    severity="low",
+                    result_type="url",
+                    source_url="https://github.com/sherlock-project/sherlock"
                 )
 
-        # Leakcheck logic (email only)
-        if request.data_type == "email":
-            result = check_leakcheck(request.search_data)
-            models.ToolStatus.update_status(
-                db, scan_id, "leakcheck",
-                "completed" if result["success"] else "failed",
-                result.get("error")
-            )
-            if result["success"]:
-                models.ScanResult.create(
-                    scan_job_id=scan_id,
-                    tool_name="leakcheck",
-                    result=result["results"],
-                    confidence=0.85,
-                    severity="medium"
-                )
-
-        # Placeholder mock for the other tools (to be replaced later)
+        # Simulate other tools
         for tool in ["gitleaks", "trufflehog", "google_dork", "spiderfoot"]:
             models.ScanResult.create(
-                scan_job_id=scan_id,
+                job_id=scan_id,
                 tool_name=tool,
                 result={"mock": "Tool ran successfully"},
-                confidence=round(random.uniform(0.6, 0.95), 2),
-                severity="low"
+                confidence=0.7,
+                severity="low",
+                result_type="url",           # 👈 Sherlock finds URLs
+                source_url=f"https://github.com/{tool}/{tool}"
             )
             models.ToolStatus.update_status(db, scan_id, tool, "completed")
 
+        print("✅ Finished scan job logic.")
         return scan_id
 
+    except Exception as e:
+        print("❌ ERROR during scan job:", str(e))
+        return None
     finally:
         db.close()
+

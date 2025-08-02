@@ -18,7 +18,7 @@ def get_scan_history(db: Session = Depends(get_db)):
     history = []
 
     for job in jobs:
-        results = db.query(ScanResult).filter_by(scan_job_id=job.id).all()
+        results = db.query(ScanResult).filter_by(job_id=job.id).all()
         job_data = {
             "scan_id": job.id,
             "data_type": job.data_type,

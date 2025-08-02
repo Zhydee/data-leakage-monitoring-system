@@ -1,32 +1,47 @@
 import subprocess
-import json
+import tempfile
+import os
+import sys
+import re
 
 def run_sherlock(username: str) -> dict:
     try:
-        # Run Sherlock and output to JSON file
+        # Still keep this for future use, but not used now
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp_file:
+            output_path = tmp_file.name
+
+        sherlock_dir = os.path.abspath(os.path.dirname(__file__))
+
+        print("📁 Sherlock directory (cwd):", sherlock_dir)
+
         result = subprocess.run(
-            ["sherlock", username, "--json", "--print-found"],
+            [
+                sys.executable, "-m", "sherlock_project", username,
+                "--print-found"
+            ],
             capture_output=True,
             text=True,
-            timeout=90
+            timeout=200,
+            cwd=sherlock_dir  # 👈 Run from inside sherlock directory
         )
-        output = result.stdout.strip()
 
-        # Parse JSON output if available
-        if output:
+        print("🧪 STDOUT:", result.stdout[:500])  # Limit output for readability
+        print("🧪 STDERR:", result.stderr[:500])
+
+        # Parse stdout for URLs
+        found_urls = re.findall(r'https?://\S+', result.stdout)
+
+        if found_urls:
             return {
-                "found_on": json.loads(output),
-                "success": True
+                "success": True,
+                "found_on": found_urls
             }
         else:
             return {
-                "found_on": {},
-                "success": False,
-                "error": "No results or output could not be parsed."
+                "success": True,
+                "found_on": [],
+                "error": "No URLs found in Sherlock output"
             }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}

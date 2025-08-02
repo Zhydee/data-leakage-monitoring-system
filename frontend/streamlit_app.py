@@ -99,23 +99,29 @@ if page == "Scanner":
                 # Show scanning progress
                 st.success("✅ Input validated successfully")
                 
-                with st.spinner("🔍 Scanning across all OSINT platforms..."):
+                with st.spinner("🚀 Initiating scan..."):
                     # Placeholder for actual scanning logic
-                    import time
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    tools = ["GitLeaks", "TruffleHog", "theHarvester", "SpiderFoot", "Sherlock", "LeakCheck"]
-                    
-                    for i, tool in enumerate(tools):
-                        status_text.text(f"Running {tool}...")
-                        time.sleep(1)  # Simulate scanning time
-                        progress_bar.progress((i + 1) / len(tools))
-                    
-                    status_text.text("Scan completed!")
-                    
-                    st.success("🎉 Scan completed successfully!")
-                    st.info("📊 Results will be available in the 'Scan History' tab")
+                    payload = {
+                                "data_type": data_type,
+                                "search_data": search_data.strip()
+                    }
+
+                    if data_type == "Custom Regex":
+                        payload["custom_regex"] = custom_regex
+
+                    try:
+                        response = requests.post("http://localhost:8000/scan/start", json=payload)
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success("🎉 Scan started successfully!")
+                            st.info(f"🆔 Scan Job ID: `{result['job_id']}`")
+                            st.info("📊 Results will be available in the 'Scan History' tab")
+
+                        else:
+                            st.error(f"❌ Scan failed: {response.status_code} - {response.text}") 
+                    except Exception as e:
+                        st.error(f"❌ Error initiating scan: {str(e)}")
                     
             else:
                 st.error("❌ Please enter data to search")
@@ -298,39 +304,17 @@ elif page == "Scan History":
                     st.markdown(f"**Status:** `{scan['status']}`")
                     st.markdown("**Results:**")
                     for tool, result in scan["results"].items():
-                        st.markdown(f"- **{tool}**")
-                        st.json(result["data"])
+                        st.markdown(f"### 🔧 {tool.capitalize()}")
+                        if tool == "sherlock" and isinstance(result["data"], list):
+                            for url in result["data"]:
+                                st.markdown(f"- 🌐 [View Profile]({url})", unsafe_allow_html=True)
+                        else:
+                            st.json(result["data"])
                         st.caption(f"Confidence: {result['confidence']} | Severity: {result['severity']}")
         else:
             st.error("❌ Failed to fetch scan history.")
     except Exception as e:
         st.error(f"❌ Error: {e}")
-
-    
-    
-    # Placeholder for scan history table
-    st.info("Scan history functionality will be implemented in upcoming weeks")
-    
-    # Sample data structure for future implementation
-    st.subheader("Sample Scan Results Structure")
-    st.code("""
-    {
-        "scan_id": "scan_001",
-        "data_type": "Email Address",
-        "search_data": "user@example.com",
-        "timestamp": "2024-01-15 10:30:00",
-        "status": "completed",
-        "results": {
-            "gitleaks": {"found": 5, "repositories": ["repo1", "repo2"]},
-            "trufflehog": {"found": 3, "secrets": ["api_key", "password"]},
-            "theharvester": {"found": 10, "emails": ["email1", "email2"]},
-            "spiderfoot": {"found": 8, "domains": ["domain1", "domain2"]},
-            "sherlock": {"found": 12, "platforms": ["twitter", "github"]},
-            "leakcheck": {"found": 3, "breaches": ["exploit.in", "collection1"]}
-        }
-    }
-    """, language="json")
-
 elif page == "Reports":
     st.header("📈 Security Reports")
     st.markdown("View comprehensive analysis of your security scans")
