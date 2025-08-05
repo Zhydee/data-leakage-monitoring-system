@@ -1,12 +1,25 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
+import tldextract
+from datetime import datetime
+import locale
+from zoneinfo import ZoneInfo  # ✅ modern timezone handling
 import requests
+import random
 import os
 import re
 from dotenv import load_dotenv
 
 load_dotenv()
-           
+
+st.markdown("""
+    <style>
+        [data-testid="collapsedControl"] {
+            display: none;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # Map display name to backend name
 backend_data_type_map = {
 "Email Address": "email",
@@ -22,7 +35,18 @@ backend_data_type_map = {
 # Reverse map to display correct label in Scan History
 display_name_map = {v: k for k, v in backend_data_type_map.items()}
            
-
+st.markdown("""
+    <style>
+        /* Remove sidebar collapse button */
+        section[data-testid="stSidebar"] > div:first-child button[title="Hide sidebar"] {
+            display: none;
+        }
+        /* Optional: prevent collapsing sidebar area */
+        div[data-testid="collapsedControl"] {
+            display: none !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 st.set_page_config(
     page_title="Data Leakage Monitoring System",
     page_icon="🔍",
@@ -39,7 +63,6 @@ A unified platform for monitoring data leakage across multiple open sources.
 """, unsafe_allow_html=True)
 
 
-
 # Test backend connection
 try:
     response = requests.get("http://localhost:8000/health")
@@ -50,35 +73,40 @@ try:
 except Exception as e:
     st.error(f"❌ Backend connection error: {str(e)}")
 
-# Sidebar navigation
-from streamlit_option_menu import option_menu
 
 with st.sidebar:
         # Logo and title
-    st.markdown("## Data Leakage Monitoring")
-    selected = option_menu(
-        menu_title=None,
-        options=["Scanner", "About Tools", "Scan History", "Reports"],
-        icons=["search", "tools", "clock-history", "bar-chart-line"],
-        default_index=0,
-        styles={
-            "container": {"padding": "10px", "background-color": "#1e1e1e", "border-radius": "8px"},
-            "icon": {"color": "orange", "font-size": "18px"},
-            "nav-link": {
-                "font-size": "15px",
-                "text-align": "left",
-                "margin": "5px",
-                "padding": "8px",
-                "color": "white",
-                "border-radius": "5px"
-            },
-            "nav-link-selected": {
-                "background-color": "#4b4b4b",
-                "font-weight": "bold",
-                "color": "white"
-            }
+ selected = option_menu(
+    
+    menu_title=None,
+    options=["Homepage", "Scanner", "About Tools", "Scan History", "Reports"],
+    icons=["house", "search", "tools", "clock-history", "bar-chart-line"],
+    default_index=0,  # Default is Homepage
+    styles={
+        "container": {
+            "padding": "10px",
+            "background-color": "#f7f7f7",  # light gray sidebar
+            "border-radius": "8px"
+        },
+        "icon": {
+            "color": "#f39c12",  # orange icons
+            "font-size": "18px"
+        },
+        "nav-link": {
+            "font-size": "16px",
+            "text-align": "left",
+            "margin": "5px",
+            "padding": "10px",
+            "color": "#333333",  # dark gray text
+            "border-radius": "6px"
+        },
+        "nav-link-selected": {
+            "background-color": "#e0e0e0",  # light gray selection
+            "font-weight": "bold",
+            "color": "#000000"  # black text
         }
-    )
+    }
+)
 
 
 
@@ -376,7 +404,29 @@ elif selected == "Scan History":
             scans = res.json()
             for scan in scans:
                 with st.expander(f"🔎 Scan ID {scan['scan_id']} - {scan['search_data']} ({scan['data_type']})"):
-                    st.markdown(f"**Timestamp:** {scan['timestamp']}")
+                                        # Parse timestamp
+                  # Convert UTC timestamp to Malaysia time
+                    dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
+
+                    # Format Malay date
+                    try:
+                        locale.setlocale(locale.LC_TIME, "ms_MY.utf8")
+                    except:
+                        locale.setlocale(locale.LC_TIME, "")
+
+                    malay_date = dt.strftime("%d %B %Y")
+
+                    # Format English time (for AM/PM)
+                    try:
+                        locale.setlocale(locale.LC_TIME, "en_US.utf8")
+                    except:
+                        locale.setlocale(locale.LC_TIME, "C")
+
+                    english_time = dt.strftime("%I:%M %p")
+
+                    # Show final result
+                    st.markdown(f"**🕒 Timestamp:** {malay_date}, {english_time}")
+
                     st.markdown(f"**Status:** `{scan['status']}`")
                     st.markdown("**Results:**")
                 # Explanations for each tool
@@ -401,7 +451,14 @@ elif selected == "Scan History":
                         if tool == "sherlock" and isinstance(result["data"], list):
                             st.markdown(f"🔎 Found `{len(result['data'])}` social profiles:")
                             for url in result["data"]:
-                                st.markdown(f"- 🌐 [View Profile]({url})", unsafe_allow_html=True)
+                                ext = tldextract.extract(url)
+                                platform = ext.domain.capitalize()
+                                st.markdown(f"""
+                                    <div style='border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; background-color:#f9f9f9'>
+                                        <b>🛰 Platform:</b> {platform}<br>
+                                        <b>🔗 Link:</b> <a href="{url}" target="_blank">{url}</a>
+                                    </div>
+                                    """, unsafe_allow_html=True)
                         else:
                             if tool == "leakcheck":
                                 if result["data"] == []:
@@ -436,3 +493,72 @@ elif selected == "Reports":
     
     st.markdown("---")
     st.success("🛡️ **Good to know:** All reports are written in simple language so you can understand your security status without technical knowledge.")
+
+elif selected == "Homepage":
+    
+
+    # Modern Homepage UI
+    st.markdown("""
+        <div style='background: linear-gradient(to right, #f8f9fa, #ffffff); padding: 3rem 2rem; border-radius: 12px; text-align: center;'>
+            <h1 style='font-size: 3rem; color: #2c3e50;'>👋 Welcome to the Data Leakage Monitoring System</h1>
+            <p style='font-size: 1.25rem; color: #555;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
+            <p style='font-size: 1rem; color: #777; max-width: 700px; margin: auto;'>
+                Whether you're a student, teacher, freelancer, or concerned internet user — our system helps you find exposed emails, IC numbers, phone numbers, and even API keys on public platforms like GitHub and Pastebin.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 🔍 What This System Can Do")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.image("https://cdn-icons-png.flaticon.com/512/1170/1170627.png", width=60)
+        st.subheader("Scan for Leaks")
+        st.write("Search public platforms for exposed data like emails, IC numbers, or API keys.")
+
+    with col2:
+        st.image("https://cdn-icons-png.flaticon.com/512/751/751381.png", width=60)
+        st.subheader("Understand Results")
+        st.write("Easy-to-read results show what was found, where it was found, and why it matters.")
+
+    with col3:
+        st.image("https://cdn-icons-png.flaticon.com/512/1828/1828640.png", width=60)
+        st.subheader("Protect Your Identity")
+        st.write("Take simple steps to improve your security with our non-technical recommendations.")
+
+    tips = [
+        "🔐 Never reuse your password across multiple websites.",
+        "📧 Be cautious of emails asking for personal information.",
+        "🔍 You can use this system to check for leaks of your IC or phone number.",
+        "🧾 Always double-check URLs before clicking links online.",
+        "🔑 Use a password manager to generate and store strong, unique passwords.",
+        "⚠️ Do not share OTPs or verification codes with anyone — even if they claim to be from a bank.",
+        "🔎 Look for HTTPS and lock symbols when browsing sensitive websites.",
+        "📱 Be careful when scanning QR codes from untrusted sources.",
+    ]
+
+    # Optional: Refresh tip on page reload
+    st.markdown("### 💡 Security Tip of the Day")
+    st.info(random.choice(tips))
+
+    st.markdown("---")
+    st.markdown("### 👥 Who Is This For?")
+    st.markdown("""
+        - 🧑‍🎓 **Students** uploading assignments with sensitive data<br>
+        - 👩‍🏫 **Teachers** managing class files online<br>
+        - 👨‍💻 **Freelancers** and small business owners without access to enterprise tools<br>
+        - 👵 **Senior users** who want a simple way to check their email or IC safety
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### 🌐 Tools Behind the System")
+    st.markdown("""
+        - **GitLeaks**, **TruffleHog** – Detect exposed secrets on GitHub  
+        - **Sherlock** – Check for exposed usernames on 400+ social platforms  
+        - **LeakCheck.io** – Verify email addresses against breach databases  
+        - **SpiderFoot**, **theHarvester** – Reconnaissance tools to collect public OSINT
+    """)
+
+    st.success("🔐 We never store your data. Everything runs securely and ethically using only public sources.")
+
+    st.markdown("<div id='start'></div>", unsafe_allow_html=True)
