@@ -17,13 +17,22 @@ def run_sherlock(username: str) -> dict:
         result = subprocess.run(
             [
                 sys.executable, "-m", "sherlock_project", username,
-                "--print-found"
+                "--print-found",
+                "--no-txt"  # 👈 prevent .txt file creation
+                
             ],
             capture_output=True,
             text=True,
             timeout=200,
             cwd=sherlock_dir  # 👈 Run from inside sherlock directory
         )
+        # 🧹 Clean up any .txt files Sherlock might have created (failsafe)
+        for file in os.listdir(sherlock_dir):
+            if file.endswith(".txt"):
+                try:
+                    os.remove(os.path.join(sherlock_dir, file))
+                except Exception as cleanup_error:
+                    print("⚠️ Cleanup failed:", cleanup_error)
 
         print("🧪 STDOUT:", result.stdout[:500])  # Limit output for readability
         print("🧪 STDERR:", result.stderr[:500])

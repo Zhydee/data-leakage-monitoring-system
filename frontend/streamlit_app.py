@@ -3,7 +3,7 @@ from streamlit_option_menu import option_menu
 import tldextract
 from datetime import datetime
 import locale
-from zoneinfo import ZoneInfo  # ✅ modern timezone handling
+from zoneinfo import ZoneInfo
 import requests
 import random
 import os
@@ -12,553 +12,594 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-st.markdown("""
-    <style>
-        [data-testid="collapsedControl"] {
-            display: none;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# Map display name to backend name
-backend_data_type_map = {
-"Email Address": "email",
-"Phone Number": "phone",
-"Username": "username",
-"Domain Name": "domain",
-"IP Address": "ip",
-"Credit Card Number": "credit_card",
-"IC Number": "ic",
-"API Keys/Tokens": "api_key",
-"Custom Regex": "custom"
-  }
-# Reverse map to display correct label in Scan History
-display_name_map = {v: k for k, v in backend_data_type_map.items()}
-           
-st.markdown("""
-    <style>
-        /* Remove sidebar collapse button */
-        section[data-testid="stSidebar"] > div:first-child button[title="Hide sidebar"] {
-            display: none;
-        }
-        /* Optional: prevent collapsing sidebar area */
-        div[data-testid="collapsedControl"] {
-            display: none !important;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Data Leakage Monitoring System",
-    page_icon="🔍",
-    layout="wide"
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"  # ENSURES SIDEBAR IS INITIALLY OPEN AND BUTTON IS ALWAYS FUNCTIONAL
 )
 
+# --- ROBUST & SCALABLE UI STYLES ---
+# --- ROBUST & SCALABLE UI STYLES ---
 st.markdown("""
-<h1 style='text-align: center; color: white; font-size: 40px; margin-top: -90px;'>
-🔍 <span style='color:#f39c12;'>Data Leakage Monitoring System</span>
-</h1>
-<p style='text-align: center; color: #CCCCCC; font-size: 16px; margin-top: -10px;'>
-A unified platform for monitoring data leakage across multiple open sources.
-</p>
+    <style>
+        /* --- General App Styling (Bright Theme) --- */
+        html {
+            font-size: 16px;
+        }
+        body, .main {
+            background-color: #F8F9FA;
+            color: #212529;
+            font-size: 0.95rem;
+        }
+        
+        /* --- Main Content Area Centering & Max-Width --- */
+        .block-container {
+            max-width: 1100px;
+            padding: 1.5rem;
+            margin: 0 auto;
+        }
+
+        /* --- Scalable Typography using REM --- */
+        h1 { font-size: 2.25rem; }
+        h2 { font-size: 1.6rem; }
+        h3 { font-size: 1.25rem; }
+        h5 { font-size: 1.1rem; }
+
+        /* --- Hide Unwanted Streamlit Elements --- */
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+
+        
+        /* --- Sidebar Styling --- */
+        [data-testid="stSidebar"] {
+            background-color: #E9ECEF;
+            border-right: 1px solid #D1D5DB;
+        }
+        
+        /* --- Compact Button Styling --- */
+        .stButton>button {
+            border: 2px solid #f39c12;
+            background-color: #f39c12;
+            color: #FFFFFF;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        .stButton>button:hover {
+            background-color: #e67e22;
+            border-color: #e67e22;
+        }
+        
+        /* --- Input & Selectbox Styling --- */
+        .stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div {
+            background-color: #FFFFFF;
+            color: #212529;
+            border-radius: 8px;
+            border: 1px solid #CED4DA;
+            font-size: 0.9rem;
+        }
+        
+        /* --- Compact Expander Styling --- */
+        .st-expander, [data-testid="stExpander"] {
+            background-color: #FFFFFF;
+            border: 1px solid #E0E0E0;
+            border-radius: 10px;
+        }
+        .st-expander header, [data-testid="stExpanderHeader"] {
+            font-size: 1.05rem;
+            color: #2c3e50;
+            font-weight: bold;
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
 
-# Test backend connection
+# --- DATA MAPPING ---
+backend_data_type_map = {
+    "Email Address": "email", "Password": "password", "Phone Number": "phone",
+    "Username": "username", "Domain Name": "domain", "IP Address": "ip",
+    "Credit Card Number": "credit_card", "IC Number": "ic", "API Keys/Tokens": "api_key"
+}
+display_name_map = {v: k for k, v in backend_data_type_map.items()}
+
+
+
+# --- BACKEND CONNECTION TEST ---
 try:
-    response = requests.get("http://localhost:8000/health")
-    if response.status_code == 200:
-        st.success("✅ Backend connection successful")
-    else:
-        st.error("❌ Backend connection failed")
-except Exception as e:
-    st.error(f"❌ Backend connection error: {str(e)}")
+    requests.get("http://localhost:8000/health", timeout=2)
+except Exception:
+    pass # Keep it silent
 
-
+# --- SIDEBAR NAVIGATION ---
 with st.sidebar:
-        # Logo and title
- selected = option_menu(
-    
-    menu_title=None,
-    options=["Homepage", "Scanner", "About Tools", "Scan History", "Reports"],
-    icons=["house", "search", "tools", "clock-history", "bar-chart-line"],
-    default_index=0,  # Default is Homepage
-    styles={
-        "container": {
-            "padding": "10px",
-            "background-color": "#f7f7f7",  # light gray sidebar
-            "border-radius": "8px"
-        },
-        "icon": {
-            "color": "#f39c12",  # orange icons
-            "font-size": "18px"
-        },
-        "nav-link": {
-            "font-size": "16px",
-            "text-align": "left",
-            "margin": "5px",
-            "padding": "10px",
-            "color": "#333333",  # dark gray text
-            "border-radius": "6px"
-        },
-        "nav-link-selected": {
-            "background-color": "#e0e0e0",  # light gray selection
-            "font-weight": "bold",
-            "color": "#000000"  # black text
+    st.markdown("<h1 style='color:#2c3e50; text-align:center; font-size: 1.5rem;'>MENU</h1>", unsafe_allow_html=True)
+    selected = option_menu(
+        menu_title=None,
+        options=["Homepage", "Scanner", "Scan History", "About Tools", "Reports", "FAQ"],
+        icons=["house-door", "search", "clock-history", "tools", "clipboard-data", "question-circle"],
+        default_index=0,
+        styles={
+            "container": {"padding": "0 !important", "background-color": "transparent"},
+            "icon": {"color": "#f39c12", "font-size": "1.1rem"},
+            "nav-link": {
+                "font-size": "0.95rem", "text-align": "left", "margin": "4px", "padding": "10px",
+                "color": "#343A40", "background-color": "#FFFFFF", "border-radius": "8px"
+            },
+            "nav-link-selected": {"background-color": "#f39c12", "color": "#FFFFFF", "font-weight": "bold"},
         }
-    }
-)
+    )
 
-
-
+# --- PAGE ROUTING ---
 if selected == "Scanner":
     st.header("🔍 Data Leakage Scanner")
-    st.markdown("Select data type and input information to scan across all OSINT platforms")
-    
-    # Data type selection - simplified without regex patterns display
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Data Type")
-        data_type = st.selectbox(
-            "Choose data type:",
-            [
-                "Email Address",
-                "Phone Number", 
-                "Username",
-                "Domain Name",
-                "IP Address",
-                "Credit Card Number",
-                "IC Number",
-                "API Keys/Tokens",
-                "Custom Regex"
-            ],
-             help="Select the type of data you want to scan for leaks. E.g., an email address, username, or IC number."
-        )
-    
-    with col2:
-        st.subheader("Input Data")
-        
-        if data_type == "Custom Regex":
-            custom_regex = st.text_input(
-                "Enter custom regex pattern:",
-                placeholder="e.g., ^[A-Z]{2,3}-\\d{4,6}$",
-                help="Define your own pattern using regular expressions."
+    st.markdown("Select a data type and provide the information to scan across all integrated OSINT platforms.")
+
+    with st.container(border=True):
+        col1, col2 = st.columns([1, 2], gap="large")
+
+        with col1:
+            st.subheader("1. Select Data Type")
+            data_type = st.selectbox(
+                label="Choose the type of data to scan for:",
+                options=list(backend_data_type_map.keys()),
+                label_visibility="collapsed",
+                help="Select the type of data you want to scan for leaks."
             )
-            search_data = st.text_area(
-                "Enter data to search:",
-                height=100,
-                placeholder="Enter the data you want to search for...",
-                help="Paste your list of values (e.g., multiple usernames or IC numbers) to search using your custom regex."
-            )
-        else:
+
+        with col2:
             help_messages = {
                 "Email Address": "Check if your email has been leaked in public data breaches. e.g., user@example.com",
+                "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
                 "Phone Number": "Find out if your phone number is exposed in public sources. Format: 012-3456789",
                 "Username": "Scan the internet for social media and forum accounts matching a username.",
                 "Domain Name": "Discover if a domain (e.g., example.com) has been associated with leaked data.",
-                "IP Address": "Check if your IP address is publicly exposed or mentioned.",
+                "IP Address": "Check if an IP address is publicly exposed or mentioned.",
                 "Credit Card Number": "Scan for potential credit card leaks (input is masked and protected).",
                 "IC Number": "Monitor Malaysian IC number exposure. Format: xxxxxx-xx-xxxx",
-                "API Keys/Tokens": "Scan public platforms for exposed API keys or secret tokens."
+                "API Keys/Tokens": "Scan all of public GitHub for an exposed secret (e.g., API key, password, token).",
             }
+            
+            if data_type == "Password":
+                search_data = st.text_input(
+                    label="2. Provide Input Data",
+                    type="password",
+                    placeholder="Enter password to check...",
+                    help=help_messages.get(data_type)
+                )
+            else:
+                search_data = st.text_area(
+                    label="2. Provide Input Data",
+                    height=100,
+                    placeholder=f"Enter {data_type.lower()} to search...",
+                    help=help_messages.get(data_type)
+                )
 
-            search_data = st.text_area(
-                "Enter data to search:",
-                height=100,
-                placeholder=f"Enter {data_type.lower()} to search for...",
-                help=help_messages.get(data_type, "Enter the value(s) to search.")
-            )
-        
-        # Scan button
-        st.markdown("---")
-        scan_button = st.button("🚀 Start Comprehensive Scan", type="primary", use_container_width=True)
-        
-        if scan_button:
-            if search_data:
-                # Regex patterns for validation (hidden from UI)
-                regex_patterns = {
-                    "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                    "Phone Number": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
-                    "Username": r"^[a-zA-Z0-9_-]{3,16}$",
-                    "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-                    "Credit Card Number": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
-                    "IC Number": r"^\d{6}-\d{2}-\d{4}$",
-                    "API Keys/Tokens": r"^[A-Za-z0-9+/=]{20,}$",
-                    "Custom Regex": ""
-                }
-     
-                backend_data_type = backend_data_type_map[data_type]
-                # Validate input against regex pattern
-                if data_type != "Custom Regex":
-                    pattern = regex_patterns[data_type]
-                    if not re.search(pattern, search_data.strip()):
-                        st.error(f"❌ Input doesn't match {data_type} format")
-                        st.stop()
-                else:
-                    if not custom_regex:
-                        st.error("❌ Please enter a custom regex pattern")
-                        st.stop()
-                
-                # Show scanning progress
-                st.success("✅ Input validated successfully")
-                
-                with st.spinner("🚀 Initiating scan..."):
-                    # Placeholder for actual scanning logic
-                    payload = {
-                                "data_type": backend_data_type,
-                                "search_data": search_data.strip()
-                    }
+        st.markdown("<hr style='border: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
+        scan_button = st.button("🚀 Start Comprehensive Scan", use_container_width=True)
 
-                    if data_type == "Custom Regex":
-                        payload["custom_regex"] = custom_regex
-
+    if scan_button:
+        if search_data:
+            regex_patterns = {
+                "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                "Password": r".{6,}", "Phone Number": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+                "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                "Credit Card Number": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
+                "IC Number": r"^\d{6}-\d{2}-\d{4}$", "API Keys/Tokens": r"^[A-Za-z0-9+/=_-]{16,}$",
+            }
+            backend_data_type = backend_data_type_map[data_type]
+            pattern = regex_patterns[data_type]
+            if not re.search(pattern, search_data.strip()):
+                st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
+            else:
+                st.success("✅ Input validated. Initiating scan...", icon="👍")
+                with st.spinner("🚀 Scanning... This may take a few minutes for public scans."):
+                    payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
                     try:
                         response = requests.post("http://localhost:8000/scan/start", json=payload)
-
                         if response.status_code == 200:
                             result = response.json()
-                            st.success("🎉 Scan started successfully!")
-                            st.info(f"🆔 Scan Job ID: `{result['job_id']}`")
-                            st.info("📊 Results will be available in the 'Scan History' tab")
-
+                            st.success(f"🎉 Scan started successfully! Job ID: `{result['job_id']}`", icon="✅")
+                            st.info("📊 Results will appear in 'Scan History' shortly.", icon="ℹ️")
                         else:
-                            st.error(f"❌ Scan failed: {response.status_code} - {response.text}") 
+                            st.error(f"❌ Scan failed: {response.status_code} - {response.text}", icon="🔥")
                     except Exception as e:
-                        st.error(f"❌ Error initiating scan: {str(e)}")
-                    
-            else:
-                st.error("❌ Please enter data to search")
-
-elif selected == "About Tools":
-    st.header("🛠️ OSINT Tools Overview")
-    st.markdown("Learn about the powerful tools used in our comprehensive scanning platform")
-    
-    # Tool categories
-    st.subheader("🔍 Our Scanning Arsenal")
-    
-    # GitLeaks
-    with st.expander("🔍 GitLeaks - Git Repository Scanner"):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Purpose:**")
-            st.markdown("Git repository scanning for secrets and sensitive data")
-            st.markdown("**Status:** ✅ Active")
-        with col2:
-            st.markdown("**What it scans:**")
-            st.markdown("- Git repositories and commit history")
-            st.markdown("- API keys and authentication tokens")
-            st.markdown("- Passwords and secrets in code")
-            st.markdown("- Configuration files with sensitive data")
-            st.markdown("- Database connection strings")
-    
-    # TruffleHog
-    with st.expander("🔍 TruffleHog - Advanced Secret Scanner"):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Purpose:**")
-            st.markdown("Advanced secret scanning with high accuracy")
-            st.markdown("**Status:** ✅ Active")
-        with col2:
-            st.markdown("**What it scans:**")
-            st.markdown("- High-entropy strings and secrets")
-            st.markdown("- OAuth tokens and API keys")
-            st.markdown("- Private keys and certificates")
-            st.markdown("- Database credentials")
-            st.markdown("- Cloud service credentials")
-    
-    # theHarvester
-    with st.expander("🔍 theHarvester - Email & Domain Intelligence"):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Purpose:**")
-            st.markdown("Email and domain harvesting from public sources")
-            st.markdown("**Status:** ✅ Active")
-        with col2:
-            st.markdown("**What it scans:**")
-            st.markdown("- Email addresses from search engines")
-            st.markdown("- Subdomains and DNS records")
-            st.markdown("- Public directory listings")
-            st.markdown("- Social media mentions")
-            st.markdown("- Professional networking sites")
-    
-    # SpiderFoot
-    with st.expander("🔍 SpiderFoot - Automated Reconnaissance"):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Purpose:**")
-            st.markdown("Comprehensive automated reconnaissance")
-            st.markdown("**Status:** ✅ Active")
-        with col2:
-            st.markdown("**What it scans:**")
-            st.markdown("- Domain and IP address intelligence")
-            st.markdown("- Dark web mentions")
-            st.markdown("- Social media profiles")
-            st.markdown("- Data breach databases")
-            st.markdown("- Public records and documents")
-    
-    # Sherlock
-    with st.expander("🔍 Sherlock - Social Media Hunter"):
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Purpose:**")
-            st.markdown("Social media username search across platforms")
-            st.markdown("**Status:** ✅ Active")
-        with col2:
-            st.markdown("**What it scans:**")
-            st.markdown("- 400+ social media platforms")
-            st.markdown("- Professional networking sites")
-            st.markdown("- Gaming platforms")
-            st.markdown("- Forums and communities")
-            st.markdown("- Dating and lifestyle platforms")
-
-         # Leakcheck
-        with st.expander("🔍 Leakcheck.io - Email Breach Lookup"):
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.markdown("**Purpose:**")
-                st.markdown("Checks if your email has appeared in public data breaches")
-                st.markdown("**Status:** ✅ Active")
-            with col2:
-                st.markdown("**What it scans:**")
-                st.markdown("- Leaked emails and password hashes")
-                st.markdown("- Sources like Exploit.in, Collection1, etc.")
-                st.markdown("- Real-time breach database using free API")
-
-    
-    st.markdown("---")
-    
-    # Scanning Process
-    st.subheader("⚙️ How Our Scanning Works")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("**1. Input Processing**")
-        st.markdown("- Validates your input format")
-        st.markdown("- Prepares data for scanning")
-        st.markdown("- Selects appropriate tools")
-    
-    with col2:
-        st.markdown("**2. Parallel Scanning**")
-        st.markdown("- Runs all tools simultaneously")
-        st.markdown("- Monitors progress in real-time")
-        st.markdown("- Handles errors gracefully")
-    
-    with col3:
-        st.markdown("**3. Results Analysis**")
-        st.markdown("- Aggregates findings from all tools")
-        st.markdown("- Removes duplicates")
-        st.markdown("- Provides risk assessment")
-    
-    st.markdown("---")
-    
-    # Data Types Supported
-    st.subheader("📊 Supported Data Types")
-    
-    data_types_info = {
-        "Email Address": "Comprehensive email scanning across platforms and databases",
-        "Phone Number": "Phone number exposure checking and verification",
-        "Username": "Username availability and exposure analysis",
-        "Domain Name": "Domain intelligence and subdomain discovery",
-        "IP Address": "IP address reputation and exposure analysis",
-        "Credit Card Number": "Credit card exposure in data breaches (masked results)",
-        "IC Number": "Malaysian IC number exposure monitoring",
-        "API Keys/Tokens": "API key and authentication token exposure",
-        "Custom Regex": "Custom pattern matching for specific data formats"
-    }
-    
-    for data_type, description in data_types_info.items():
-        st.markdown(f"**{data_type}:** {description}")
-    
-    st.markdown("---")
-    
-    # Security & Privacy
-    st.subheader("🔒 Security & Privacy")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Data Protection:**")
-        st.markdown("- All scans are encrypted")
-        st.markdown("- No data stored permanently")
-        st.markdown("- Results auto-deleted after 30 days")
-        st.markdown("- No third-party data sharing")
-    
-    with col2:
-        st.markdown("**Ethical Scanning:**")
-        st.markdown("- Only public data sources")
-        st.markdown("- Respects robots.txt files")
-        st.markdown("- Rate-limited requests")
-        st.markdown("- No illegal or harmful activities")
-    
-    st.success("🛡️ **Your Privacy Matters:** We only scan publicly available information and never store your sensitive data.")
+                        st.error(f"❌ Error initiating scan: {str(e)}", icon="🔥")
+        else:
+            st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
 
 elif selected == "Scan History":
     st.header("📊 Scan History")
-    st.markdown("Recent scans from the database")
-
+    st.markdown("Review the findings from your recent scans. Results are retrieved from the database.")
+    
     try:
         res = requests.get("http://localhost:8000/scan-history")
         if res.status_code == 200:
             scans = res.json()
+            if not scans:
+                st.info("No scan history found. Run a scan from the 'Scanner' page to see results here.", icon="ℹ️")
+
+            tool_display_names = {
+                "hibp_emails": "Email Breach Check (Have I Been Pwned)",
+                "hibp_passwords": "Password Security Check (Have I Been Pwned)",
+                "sherlock": "Username & Social Media Scan (Sherlock)",
+                "trufflehog": "Public Code & Secret Leak Scan (TruffleHog)",
+                "google_dork": "Public Exposure Scan (Google)",
+                "spiderfoot": "Automated Intelligence Scan (SpiderFoot)"
+            }
+
             for scan in scans:
-                with st.expander(f"🔎 Scan ID {scan['scan_id']} - {scan['search_data']} ({scan['data_type']})"):
-                                        # Parse timestamp
-                  # Convert UTC timestamp to Malaysia time
+                display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
+                expander_title = f"Scan ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
+                
+                with st.expander(expander_title, expanded=False):
                     dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
-
-                    # Format Malay date
-                    try:
-                        locale.setlocale(locale.LC_TIME, "ms_MY.utf8")
-                    except:
-                        locale.setlocale(locale.LC_TIME, "")
-
-                    malay_date = dt.strftime("%d %B %Y")
-
-                    # Format English time (for AM/PM)
+                    
                     try:
                         locale.setlocale(locale.LC_TIME, "en_US.utf8")
-                    except:
-                        locale.setlocale(locale.LC_TIME, "C")
+                    except locale.Error:
+                        locale.setlocale(locale.LC_TIME, "")
+                    formatted_date = dt.strftime("%d %B %Y, %I:%M %p")
 
-                    english_time = dt.strftime("%I:%M %p")
-
-                    # Show final result
-                    st.markdown(f"**🕒 Timestamp:** {malay_date}, {english_time}")
-
-                    st.markdown(f"**Status:** `{scan['status']}`")
+                    st.markdown(f"**🕒 Timestamp:** {formatted_date} | **Status:** `{scan['status']}`")
+                    st.markdown("---")
                     st.markdown("**Results:**")
-                # Explanations for each tool
+
                     tool_descriptions = {
+                        "hibp_emails": "This tool checks if your email has been found in any public data breaches using the Have I Been Pwned service.",
+                        "hibp_passwords": "This tool checks if a password has appeared in any known data breaches.",
                         "sherlock": "This tool checks social media websites to see if your username is being used anywhere.",
-                        "leakcheck": "This tool checks if your email has been found in any data leaks or hacked websites.",
-                        "gitleaks": "This tool looks through public code to find things like passwords or private information that were shared by mistake.",
-                        "trufflehog": "This tool searches deeply in code to find secret information that should not be public, like passwords or keys.",
+                        "trufflehog": "This tool scans all of public GitHub to see if a specific secret, like an API key, has been leaked.",
                         "theharvester": "This tool collects emails and other details about a website from public search engines.",
-                        "spiderfoot": "This tool gathers information about websites, IP addresses, and even mentions on the dark web."
+                        "spiderfoot": "This tool gathers information about websites, IP addresses, and even mentions on the dark web.",
+                        "google_dork": "Uses advanced Google search techniques (dorks) to find mentions of the input data on public websites, code repositories, and documents."
                     }
 
                     for tool, result in scan["results"].items():
-                        st.markdown(f"### 🔧 {tool.capitalize()}")
+                        display_name = tool_display_names.get(tool, tool.replace('_', ' ').title())
+                        st.markdown(f"<h5 style='margin-bottom:0.5rem; margin-top:1rem;'>🔧 {display_name}</h5>", unsafe_allow_html=True)
+                        
+                        with st.popover("What is this?"):
+                            st.info(tool_descriptions.get(tool, "No description available for this tool."), icon="ℹ️")
 
-                        # Show explanation
-                        if tool in tool_descriptions:
-                            with st.expander("ℹ️ What is this tool?"):
-                                st.info(tool_descriptions[tool])
+                        # --- FULL CODE FOR EACH CONDITION ---
+                        if tool == "sherlock" and isinstance(result.get("data"), list):
+                            if not result["data"]:
+                                st.success("✅ No public social profiles found for this username.")
+                            else:
+                                st.markdown(f"🔎 Found `{len(result['data'])}` social profiles:")
+                                for url in result["data"]:
+                                    ext = tldextract.extract(url)
+                                    platform = ext.domain.capitalize()
+                                    st.markdown(f"""
+                                        <div style='border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; background-color:#f9f9f9'>
+                                            <b>🛰️ Platform:</b> {platform}<br>
+                                            <b>🔗 Link:</b> <a href="{url}" target="_blank" style="color:#f39c12;">{url}</a>
+                                        </div>
+                                        """, unsafe_allow_html=True)
 
-                        # Display results
-                        if tool == "sherlock" and isinstance(result["data"], list):
-                            st.markdown(f"🔎 Found `{len(result['data'])}` social profiles:")
-                            for url in result["data"]:
-                                ext = tldextract.extract(url)
-                                platform = ext.domain.capitalize()
-                                st.markdown(f"""
-                                    <div style='border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:10px; background-color:#f9f9f9'>
-                                        <b>🛰 Platform:</b> {platform}<br>
-                                        <b>🔗 Link:</b> <a href="{url}" target="_blank">{url}</a>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                        else:
-                            if tool == "leakcheck":
-                                if result["data"] == []:
-                                    st.info("✅ No breaches found.")
-                                elif isinstance(result["data"], dict) and "error" in result["data"]:
-                                    st.warning(f"⚠️ Error: {result['data']['error']}")
+                        elif tool == "hibp_passwords" and isinstance(result.get("data"), dict):
+                            is_pwned = result["data"].get("pwned", False)
+                            count = result["data"].get("count", 0)
+                            with st.container(border=True):
+                                if is_pwned:
+                                    st.error("🚨 This Password is Unsafe", icon="🔥")
+                                    st.metric(label="Found in Data Breaches", value=f"{count:,} times")
+                                    st.warning("**Recommendation:** This password is compromised and unsafe. Change it immediately wherever you have used it.", icon="⚠️")
+                                    with st.expander("**Show me what to do next**", expanded=True):
+                                        st.markdown("""
+                                            - **Change This Password Immediately** on any site that uses it.
+                                            - **Create a Strong, Unique Password**: Use a long passphrase or a password manager.
+                                            - **Use a Password Manager**: Tools like Bitwarden or 1Password can help.
+                                            - **Enable Two-Factor Authentication (2FA)** for the best protection.
+                                        """)
                                 else:
-                                    st.json(result["data"])
+                                    st.success("✅ This Password Appears Safe", icon="🛡️")
+                                    st.metric(label="Found in Data Breaches", value="0 times")
+                                    st.info("**Good practice:** Keep using strong, unique passwords for every account.")
+
+                        elif tool == "hibp_emails" and isinstance(result.get("data"), list):
+                            breaches = result.get("data")
+                            if not breaches:
+                                st.success("✅ No public breaches found for this email address.", icon="🛡️")
+                            else:
+                                st.error(f"🚨 Found in {len(breaches)} Public Data Breaches", icon="🔥")
+                                st.markdown("Your email address was found in the following data breaches. It is highly recommended to change your password on these services and any other service where you used the same password.")
+                                
+                                for breach in breaches:
+                                    with st.container(border=True):
+                                        col1, col2 = st.columns([1, 4])
+                                        
+                                        with col1:
+                                            logo_url = breach.get("LogoPath", "https://cdn-icons-png.flaticon.com/512/732/732203.png")
+                                            st.image(logo_url, width=80)
+
+                                        with col2:
+                                            st.subheader(breach.get("Name", "Unknown Breach"))
+                                            st.markdown(f"**Breach Date:** {breach.get('BreachDate', 'Not specified')}")
+
+                                        compromised_data = breach.get("DataClasses", [])
+                                        if compromised_data:
+                                            tags_html = "".join([f"<span style='background-color:#ffebee; color:#c62828; padding: 3px 8px; border-radius:12px; margin-right:5px; font-size:0.85rem; border: 1px solid #e57373;'>{item}</span>" for item in compromised_data])
+                                            st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
+
+                                        description_html = breach.get("Description")
+                                        if description_html:
+                                            st.markdown("**Description:**")
+                                            st.markdown(description_html, unsafe_allow_html=True)
+                        
+                        # Fallback for other tools like trufflehog, etc.
+                        elif isinstance(result.get("data"), (dict, list)):
+                            if not result.get("data"):
+                                st.info("✅ No results returned from this tool.")
+                            elif "error" in result.get("data", {}):
+                                st.error(f"❌ Error: {result['data']['error']}")
                             else:
                                 st.json(result["data"])
-
-
-        else:
-            st.error("❌ Failed to fetch scan history.")
+                        
+                        else:
+                            st.write(result)
     except Exception as e:
-        st.error(f"❌ Error: {e}")
+        st.error(f"❌ An error occurred while fetching scan history: {e}", icon="🔥")
+elif selected == "About Tools":
+    st.header("🛠️ Our OSINT Arsenal")
+    st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
+
+    tools_info = {
+        "🐷 TruffleHog": { "purpose": "Scans public GitHub repositories for exposed secrets.", "scans": ["Public GitHub Repositories", "API Keys & Tokens", "Passwords & Private Keys"] },
+        "🔍 theHarvester": { "purpose": "Gathers emails, subdomains, and more from public sources.", "scans": ["Email Addresses", "Subdomains & DNS Records"] },
+        "🕷️ SpiderFoot": { "purpose": "Automated reconnaissance to gather intelligence.", "scans": ["Domain & IP Intelligence", "Dark Web Mentions"] },
+        "🕵️ Sherlock": { "purpose": "Hunts down social media accounts by username.", "scans": ["400+ Social Media Platforms", "Forums & Communities"] },
+        "📧 HIBP API": { "purpose": "Checks for email and password compromise in public data breaches.", "scans": ["Leaked Emails & Passwords", "Comprehensive Breach Database"] }
+    }
+    for tool, info in tools_info.items():
+        with st.expander(tool, expanded=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Purpose:**")
+                st.markdown(f"<p style='color:#343A40;'>{info['purpose']}</p>", unsafe_allow_html=True)
+            with col2:
+                st.markdown("**What it scans:**")
+                for item in info['scans']:
+                    st.markdown(f"- {item}")
+
+    st.markdown("---")
+    
+    st.subheader("⚙️ How Our Scanning Works")
+    col1, col2, col3 = st.columns(3, gap="large")
+    with col1:
+        st.markdown("**1. Input Processing**")
+        st.markdown("- Validates input\n- Selects tools")
+    with col2:
+        st.markdown("**2. Parallel Scanning**")
+        st.markdown("- Runs tools simultaneously\n- Monitors progress")
+    with col3:
+        st.markdown("**3. Results Analysis**")
+        st.markdown("- Aggregates findings\n- Removes duplicates")
+
+    st.markdown("---")
+    st.subheader("🔒 Security & Privacy")
+    col1, col2 = st.columns(2, gap="large")
+    with col1:
+        st.markdown("**Data Protection:**")
+        st.markdown("- Scans are encrypted\n- No permanent storage\n- Auto-delete results")
+    with col2:
+        st.markdown("**Ethical Scanning:**")
+        st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
+
 elif selected == "Reports":
     st.header("📈 Security Reports")
-    st.markdown("View comprehensive analysis of your security scans")
+    st.markdown("View comprehensive analysis and generate downloadable reports of your security scans.")
     
-    st.info("📊 Detailed security reports will be available here after completing scans")
-    
-    # Simple explanation for general users
-    st.subheader("What You'll Get:")
-    st.markdown("""
-    - **📋 Summary Report**: Easy-to-understand overview of findings
-    - **🔍 Detailed Analysis**: Complete breakdown of each security check
-    - **📊 Risk Assessment**: Understanding what the findings mean for you
-    - **💡 Recommendations**: Simple steps to improve your security
-    - **📁 Export Options**: Download reports as PDF or spreadsheet
-    """)
-    
-    st.markdown("---")
-    st.success("🛡️ **Good to know:** All reports are written in simple language so you can understand your security status without technical knowledge.")
+    with st.container(border=True):
+        st.info("📊 This feature is under development. Detailed reports will be available here soon.", icon="💡")
+        st.subheader("What You'll Get:")
+        st.markdown("""
+        - **📋 Summary Report**: An easy-to-understand overview of all findings.
+        - **🔍 Detailed Analysis**: A complete breakdown of each security check.
+        - **🚨 Risk Assessment**: Clear explanations of what the findings mean for you.
+        - **💡 Actionable Recommendations**: Simple steps to improve your digital safety.
+        - **📁 Export Options**: Download reports as PDF or spreadsheets.
+        """)
+    st.success("🛡️ **Our Goal:** Reports are written in simple language for everyone to understand.")
+
+elif selected == "FAQ":
+    st.header("❓ Frequently Asked Questions")
+    st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
+
+    # --- NEW CATEGORY ---
+    st.subheader("🚨 Understanding Your Results")
+
+    with st.expander("**What should I do if I find my data has been leaked?**", expanded=True): # Expanded by default
+        st.markdown("""
+        Finding your data has been exposed can be stressful, but taking swift action is key. Here are the recommended steps:
+        - **1. Change Compromised Credentials:** If a password or username was leaked, change that password **immediately** on every site where you have used it. Prioritize critical accounts like email and banking.
+        - **2. Revoke and Regenerate Keys:** If an API key or token was exposed, revoke it immediately in that service's dashboard and generate a new one.
+        - **3. Contact Financial Institutions:** If your credit card or bank information was exposed, contact your bank or credit card company right away to report it and request a new card.
+        - **4. Enable Two-Factor Authentication (2FA):** For any affected account, enable 2FA (or MFA). This is one of the most effective ways to secure an account even if the password is known.
+        """)
+
+    with st.expander("**Why do some scans show “No Leaks Found” even if I suspect an exposure?**"):
+        st.markdown("""
+        There are a few reasons why a scan might not find something you suspect is out there:
+        - **Not Yet Publicly Indexed:** The data leak may have occurred, but it might not have been discovered and indexed in the public breach databases that our tools scan.
+        - **Outside Our Scan Scope:** The leak could be on a private forum, a marketplace on the dark web, or another source that our public-facing OSINT tools do not cover.
+        - **Data Has Been Removed:** The exposed data may have been found and removed from the public site where it was posted (like Pastebin).
+
+        We recommend rescanning periodically, as databases are constantly updated with new information.
+        """)
+
+    st.subheader("🛡️ Security & Privacy")
+
+    with st.expander("**Is it safe to enter my password or API key here?**"):
+        st.markdown("""
+        **Yes.** We prioritize your security and privacy above all else. Here’s how we handle sensitive data:
+        - **Passwords:** We **never** send your actual password to any server. We use a technique called "k-Anonymity" (the same model used by the trusted Have I Been Pwned service). This allows us to check for a breach without ever exposing the full password you entered.
+        - **API Keys & Other Secrets:** Your input is sent directly to the scanning tools (like TruffleHog) to be checked against public data. It is **never** written to our database or stored after the scan is complete.
+
+        Our fundamental goal is to help you find *existing* public leaks, not create new ones.
+        """)
+
+    with st.expander("**Where does the system search for my data?**"):
+        st.markdown("""
+        The system scans **only publicly available sources**. This includes places like:
+        - Public code repositories (e.g., GitHub)
+        - Public text-sharing sites (e.g., Pastebin and its alternatives)
+        - Publicly indexed web pages and documents found by search engines.
+        - Known data breach collections that are publicly accessible.
+
+        We **do not** access private databases, the deep web, or dark web resources. All scans are performed within the bounds of ethical open-source intelligence gathering.
+        """)
+
+    with st.expander("**Do you store my search history or results?**"):
+        st.markdown("""
+        Yes, the results of your scans are stored temporarily in a secure database so you can review them in the **Scan History** tab. This data is linked only to your user session and is not made public.
+
+        For your privacy, we recommend you review your results and then delete old scan histories when you no longer need them.
+        """)
+
+    with st.expander("**Is this service legal to use?**"):
+        st.markdown("""
+        **Yes.** This system exclusively uses **Open-Source Intelligence (OSINT)** tools and techniques. This means it only searches for, aggregates, and displays data that is **already publicly available** on the internet.
+
+        It does not perform any hacking, cracking, or unauthorized access of any kind into private systems. It is a tool for discovering your public footprint, not for malicious activity.
+        """)
+
+    st.subheader("⚙️ Using the Scanner")
+
+    with st.expander("**Why did my scan take a long time?**"):
+        st.markdown("Some scans, especially for general data types like API keys, require searching vast sources like all of public GitHub. This can naturally take several minutes. Scans for more specific data types, like checking a password against a breach list, are usually much faster.")
+
+    with st.expander("**What do I do if a tool returns an error?**"):
+        st.markdown("Occasionally, a third-party service that a tool relies on may be temporarily unavailable. If you receive an error, we recommend waiting a few minutes and trying the scan again. If the problem persists, it may be an issue with the specific open-source tool itself.")
 
 elif selected == "Homepage":
-    
-
-    # Modern Homepage UI
     st.markdown("""
-        <div style='background: linear-gradient(to right, #f8f9fa, #ffffff); padding: 3rem 2rem; border-radius: 12px; text-align: center;'>
-            <h1 style='font-size: 3rem; color: #2c3e50;'>👋 Welcome to the Data Leakage Monitoring System</h1>
-            <p style='font-size: 1.25rem; color: #555;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
-            <p style='font-size: 1rem; color: #777; max-width: 700px; margin: auto;'>
-                Whether you're a student, teacher, freelancer, or concerned internet user — our system helps you find exposed emails, IC numbers, phone numbers, and even API keys on public platforms like GitHub and Pastebin.
-            </p>
+        <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 1.5rem; margin-bottom:1rem;'>
+            <h1 style='color: #FFFFFF;'>👋 Welcome to the Data Leakage Monitoring System</h1>
+            <p style='color: #FFFFFF; font-size: 1.1rem;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
         </div>
     """, unsafe_allow_html=True)
-
-    st.markdown("### 🔍 What This System Can Do")
-    col1, col2, col3 = st.columns(3)
+    
+    st.subheader("🔍 What This System Can Do")
+    col1, col2, col3 = st.columns(3, gap="large")
 
     with col1:
-        st.image("https://cdn-icons-png.flaticon.com/512/1170/1170627.png", width=60)
-        st.subheader("Scan for Leaks")
-        st.write("Search public platforms for exposed data like emails, IC numbers, or API keys.")
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="text-align:center;">
+                    <img src="https://cdn-icons-png.flaticon.com/512/3502/3502601.png" width="50">
+                    <h3>Automated Leak Scanning</h3>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.write("Search public platforms for exposed data.")
 
     with col2:
-        st.image("https://cdn-icons-png.flaticon.com/512/751/751381.png", width=60)
-        st.subheader("Understand Results")
-        st.write("Easy-to-read results show what was found, where it was found, and why it matters.")
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="text-align:center;">
+                    <img src="https://cdn-icons-png.flaticon.com/512/1055/1055645.png" width="50">
+                    <h3>Understand Results</h3>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.write("Get clear results on what was found and why it matters.")
 
     with col3:
-        st.image("https://cdn-icons-png.flaticon.com/512/1828/1828640.png", width=60)
-        st.subheader("Protect Your Identity")
-        st.write("Take simple steps to improve your security with our non-technical recommendations.")
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div style="text-align:center;">
+                    <img src="https://cdn-icons-png.flaticon.com/512/942/942792.png" width="50">
+                    <h3>Protect Your Identity</h3>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.write("Receive simple, non-technical steps to improve your security.")
 
+
+    st.markdown("---")
+    # --- 3. NEW SECTION: WHY IT MATTERS ---
+    # --- WHY IT MATTERS SECTION (with larger, more readable text) ---
+    st.subheader("👣 Why Your Digital Footprint Matters")
+    st.markdown("Every day, personal data is leaked online. This exposure can lead to serious consequences.")
+
+    col1, col2, col3 = st.columns(3, gap="large")
+
+    with col1:
+        st.markdown("""
+            <div style='text-align:center'>
+                <p style='font-size: 2rem;'>💰</p>
+                <h4 style='margin-bottom: 0.5rem;'>Financial Fraud</h4>
+                <p>Stolen credit cards or bank details can be used for unauthorized purchases.</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("""
+            <div style='text-align:center'>
+                <p style='font-size: 2rem;'>🎭</p>
+                <h4 style='margin-bottom: 0.5rem;'>Identity Theft</h4>
+                <p>Leaked personal info can be used to open accounts or commit crimes in your name.</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown("""
+            <div style='text-align:center'>
+                <p style='font-size: 2rem;'>📧</p>
+                <h4 style='margin-bottom: 0.5rem;'>Targeted Phishing</h4>
+                <p>Hackers use leaked data to create convincing scams to trick you into revealing more.</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # --- 4. NEW SECTION: HOW IT WORKS ---
+    st.subheader("⚙️ A Simple, Powerful Process")
+    col1, col2, col3 = st.columns(3, gap="large")
+    with col1:
+        st.markdown("### 1. Provide Input\nSelect a data type (like an email or username) and enter the information you want to check.", unsafe_allow_html=True)
+    with col2:
+        st.markdown("### 2. Intelligent Scanning\nOur system intelligently selects the best tools for the job. Based on your chosen data type, we run targeted scans against the most relevant sources.", unsafe_allow_html=True)
+    with col3:
+        st.markdown("### 3. Get Unified Results\nWe consolidate all findings into a single, easy-to-read report in your 'Scan History' with clear recommendations.", unsafe_allow_html=True)
+
+    # --- 5. SECURITY TIP (MOVED HERE) ---
+    st.subheader("💡 Security Tip of the Day")
     tips = [
-        "🔐 Never reuse your password across multiple websites.",
-        "📧 Be cautious of emails asking for personal information.",
-        "🔍 You can use this system to check for leaks of your IC or phone number.",
-        "🧾 Always double-check URLs before clicking links online.",
-        "🔑 Use a password manager to generate and store strong, unique passwords.",
-        "⚠️ Do not share OTPs or verification codes with anyone — even if they claim to be from a bank.",
-        "🔎 Look for HTTPS and lock symbols when browsing sensitive websites.",
-        "📱 Be careful when scanning QR codes from untrusted sources.",
+        ("🔐 Use a Password Manager", "Tools like Bitwarden or 1Password create and store strong, unique passwords for every account, which is the single best thing you can do for your security."),
+        ("🤔 Think Before You Click", "Be cautious of phishing emails and messages. Never click suspicious links or download unexpected attachments. Always verify the sender."),
+        ("🔑 Enable Two-Factor Authentication (2FA)", "2FA adds a critical second layer of security to your accounts, requiring a code from your phone in addition to your password."),
     ]
-
-    # Optional: Refresh tip on page reload
-    st.markdown("### 💡 Security Tip of the Day")
-    st.info(random.choice(tips))
-
-    st.markdown("---")
-    st.markdown("### 👥 Who Is This For?")
-    st.markdown("""
-        - 🧑‍🎓 **Students** uploading assignments with sensitive data<br>
-        - 👩‍🏫 **Teachers** managing class files online<br>
-        - 👨‍💻 **Freelancers** and small business owners without access to enterprise tools<br>
-        - 👵 **Senior users** who want a simple way to check their email or IC safety
-    """, unsafe_allow_html=True)
+    tip_title, tip_body = random.choice(tips)
+    with st.container(border=True):
+        st.markdown(f"#### {tip_title}")
+        st.markdown(tip_body)
 
     st.markdown("---")
-    st.markdown("### 🌐 Tools Behind the System")
+
+    st.subheader("🛠️ Powered by Leading Open-Source Tools")
     st.markdown("""
-        - **GitLeaks**, **TruffleHog** – Detect exposed secrets on GitHub  
-        - **Sherlock** – Check for exposed usernames on 400+ social platforms  
-        - **LeakCheck.io** – Verify email addresses against breach databases  
-        - **SpiderFoot**, **theHarvester** – Reconnaissance tools to collect public OSINT
+    Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:
+    - **🐷 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
+    - **🕵️ Sherlock:** Hunts for your username across over 400 social media sites and online communities.
+    - **📧 HIBP API:** Checks if your email address or password has appeared in thousands of known public data breaches.
+    - **🕷️ SpiderFoot & theHarvester:** Gathers public intelligence on domains and IPs to map your digital footprint.
     """)
 
-    st.success("🔐 We never store your data. Everything runs securely and ethically using only public sources.")
-
-    st.markdown("<div id='start'></div>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive data. All scans are conducted ethically using only publicly available information.")

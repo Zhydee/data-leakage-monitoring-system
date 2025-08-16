@@ -4,13 +4,17 @@ from app.database import SessionLocal
 from app.utils.regex_map import DATA_TYPE_REGEX_MAP
 from datetime import datetime
 from tools.sherlock_wrapper import run_sherlock
-from tools.leakcheck import check_leakcheck
+from tools.hibp_email import check_hibp_breaches
+from tools.hibp_passwords import check_pwned_password
 import re
+import os
 import random
+from sqlalchemy import select # --- NEW: Import select for modern queries ---
 
 async def start_scan_job(request: ScanRequest) -> int:
     print("🔧 DEBUG: Inside start_scan_job()")
     db = SessionLocal()
+    scan_id = None # Initialize scan_id
 
     try:
         data_type = request.data_type.strip().lower()
@@ -32,14 +36,14 @@ async def start_scan_job(request: ScanRequest) -> int:
             data_type=data_type,
             search_data=request.search_data,
             custom_regex=request.custom_regex,
-            status="queued",
+            status="running",
             created_at=datetime.utcnow()
         )
         scan_id = scan_job.id
         print("✅ ScanJob created with ID:", scan_id)
 
         # Add status entries for all tools
-        tools = ["gitleaks", "trufflehog", "google_dork", "spiderfoot", "leakcheck", "sherlock"]
+        tools = ["trufflehog", "google_dork", "spiderfoot", "hibp_emails", "sherlock", "hibp_passwords"]
         for tool in tools:
             print(f"⏳ Creating ToolStatus: {tool}")
             models.ToolStatus.create(
@@ -47,8 +51,34 @@ async def start_scan_job(request: ScanRequest) -> int:
                 tool_name=tool,
                 status="pending"
             )
+        
+        # --- HIBP PASSWORD WORKFLOW ---
+        if data_type == "password":
+            print("⚙️ Running HIBP Password Check...")
+            result = check_pwned_password(request.search_data)
+            print("🔍 HIBP Password result:", result)
 
-        # Run sherlock if type is username
+            models.ToolStatus.update_status(
+                db, scan_id, "hibp_passwords",
+                "completed" if result["success"] else "failed",
+                result.get("error")
+            )
+
+            if result["success"]:
+                severity = "high" if result["pwned"] else "none"
+                confidence = 1.0 if result["pwned"] else 0.0
+                
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="hibp_passwords",
+                    result={"pwned": result["pwned"], "count": result.get("count", 0)},
+                    confidence=confidence,
+                    severity=severity,
+                    result_type="json",
+                    source_url="https://haveibeenpwned.com/Passwords"
+                )
+
+        # --- Sherlock Username Workflow ---
         if data_type == "username":
             print("⚙️ Running Sherlock...")
             result = run_sherlock(request.search_data)
@@ -70,58 +100,76 @@ async def start_scan_job(request: ScanRequest) -> int:
                     source_url="https://github.com/sherlock-project/sherlock"
                 )
 
-
-                 # ✅ Run leakcheck if type is email
+        # --- HIBP Email Workflow ---
         if data_type == "email":
-            print("⚙️ Running Leakcheck...")
-            result = check_leakcheck(request.search_data)
-            print("🔍 Leakcheck result:", result)
+            print("⚙️ Running HIBP Email Breach Check...")
+            result = check_hibp_breaches(request.search_data)
+            print("🔍 HIBP Email Breach result:", result)
             models.ToolStatus.update_status(
-                db, scan_id, "leakcheck",
+                db, scan_id, "hibp_emails",
                 "completed" if result["success"] else "failed",
-                result.get("error", result.get("note"))
+                result.get("error")
             )
 
             if result["success"]:
+                severity = "high" if result.get("breaches") else "none"
                 models.ScanResult.create(
                     job_id=scan_id,
-                    tool_name="leakcheck",
+                    tool_name="hibp_emails",
                     result=result.get("breaches", []),
-                    confidence=0.9,
-                    severity="medium",
+                    confidence=1.0,
+                    severity=severity,
                     result_type="json",
-                    source_url="https://leakcheck.io"
+                    source_url="https://haveibeenpwned.com"
                 )
             else:
                 models.ScanResult.create(
                     job_id=scan_id,
-                    tool_name="leakcheck",
-                    result={"error": result.get("error", "No breaches found")},
+                    tool_name="hibp_emails",
+                    result={"error": result.get("error", "An unknown error occurred")},
                     confidence=0.0,
                     severity="low",
                     result_type="text",
-                    source_url="https://leakcheck.io"
+                    source_url="https://haveibeenpwned.com"
                 )
-        
-        # Simulate other tools
-        for tool in ["gitleaks", "trufflehog", "google_dork", "spiderfoot"]:
+
+        # Simulate other tools 
+        for tool in ["google_dork", "spiderfoot"]:
             models.ScanResult.create(
                 job_id=scan_id,
                 tool_name=tool,
                 result={"mock": "Tool ran successfully"},
                 confidence=0.7,
                 severity="low",
-                result_type="url",           # 👈 Sherlock finds URLs
+                result_type="url",
                 source_url=f"https://github.com/{tool}/{tool}"
             )
             models.ToolStatus.update_status(db, scan_id, tool, "completed")
 
-        print("✅ Finished scan job logic.")
+        print(f"✅ Finished all tool scans for Job ID: {scan_id}. Updating final status to 'completed'.")
+        
+        # --- MODIFIED: Switched to modern SQLAlchemy 2.0 query style ---
+        stmt = select(models.ScanJob).where(models.ScanJob.id == scan_id)
+        final_scan_job = db.scalars(stmt).first()
+
+        if final_scan_job:
+            final_scan_job.status = "completed"
+            db.commit()
+            print(f"✅ Successfully updated Job ID: {scan_id} to 'completed'.")
+        else:
+            print(f"❌ ERROR: Could not find Job ID: {scan_id} in the database to finalize status.")
+        
         return scan_id
 
     except Exception as e:
-        print("❌ ERROR during scan job:", str(e))
+        print(f"❌ FATAL ERROR during scan job {scan_id}: {str(e)}")
+        if scan_id:
+            # --- MODIFIED: Switched to modern SQLAlchemy 2.0 query style ---
+            stmt = select(models.ScanJob).where(models.ScanJob.id == scan_id)
+            error_scan_job = db.scalars(stmt).first()
+            if error_scan_job:
+                error_scan_job.status = "failed"
+                db.commit()
         return None
     finally:
         db.close()
-

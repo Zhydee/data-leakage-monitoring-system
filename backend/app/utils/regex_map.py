@@ -7,5 +7,6 @@ DATA_TYPE_REGEX_MAP = {
     "credit_card": r"^\d{13,19}$",
     "ic": r"^\d{6}-\d{2}-\d{4}$",
     "api_key": r"^[A-Za-z0-9+/=]{20,}$",
-    "custom": r".*"   # or empty string ""
+    "github_url": r"^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$",
+    "password": r".{6,}"
 }
