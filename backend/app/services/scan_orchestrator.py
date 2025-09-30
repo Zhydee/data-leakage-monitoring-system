@@ -6,10 +6,20 @@ from datetime import datetime
 from tools.sherlock_wrapper import run_sherlock
 from tools.hibp_email import check_hibp_breaches
 from tools.hibp_passwords import check_pwned_password
+from tools.spiderfoot_wrapper import run_spiderfoot
 import re
 import os
 import random
-from sqlalchemy import select # --- NEW: Import select for modern queries ---
+from sqlalchemy import select 
+
+
+SPIDERFOOT_MODULE_MAP = {
+    "domain": ["sfp_dnsresolve", "sfp_dns", "sfp_whois"],
+    "username": ["sfp_accounts", "sfp_breachcompilation"],
+    "email": ["sfp_leakix", "sfp_whois"],
+    "ip": ["sfp_dnsresolve", "sfp_shodan", "sfp_virustotal"],
+    "metadata_domain": ["sfp_metadata"]
+}
 
 async def start_scan_job(request: ScanRequest) -> int:
     print("🔧 DEBUG: Inside start_scan_job()")
@@ -132,9 +142,37 @@ async def start_scan_job(request: ScanRequest) -> int:
                     result_type="text",
                     source_url="https://haveibeenpwned.com"
                 )
+        # --- SpiderFoot Workflow ---
+        if data_type in SPIDERFOOT_MODULE_MAP:
+            modules_to_run = SPIDERFOOT_MODULE_MAP[data_type]
+            print(f"⚙️ Running SpiderFoot Scan with modules: {modules_to_run}...")
+            
+            # Call the wrapper with the specific modules
+            result = run_spiderfoot(request.search_data, modules=modules_to_run)
+            print("🔍 SpiderFoot result:", result)
+
+            models.ToolStatus.update_status(
+                db, scan_id, "spiderfoot",
+                "completed" if result["success"] else "failed",
+                result.get("error")
+            )
+
+            if result["success"] and result.get("results"):
+                severity = "medium"  # Default severity, can be refined later
+                
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="spiderfoot",
+                    result=result["results"],
+                    confidence=0.9, # Higher confidence as results are very specific
+                    severity=severity,
+                    result_type="json",
+                    source_url="https://www.spiderfoot.net/"
+                )
+
 
         # Simulate other tools 
-        for tool in ["google_dork", "spiderfoot"]:
+        for tool in ["google_dork", "trufflehog"]:
             models.ScanResult.create(
                 job_id=scan_id,
                 tool_name=tool,
