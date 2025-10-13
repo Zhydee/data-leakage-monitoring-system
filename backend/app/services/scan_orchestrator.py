@@ -10,6 +10,8 @@ from tools.spiderfoot_wrapper import run_spiderfoot
 import re
 import os
 import random
+import json  # add at top of file if not already present
+import logging  
 from sqlalchemy import select 
 
 
@@ -20,28 +22,34 @@ SPIDERFOOT_MODULE_MAP = {
     "ip": ["sfp_dnsresolve", "sfp_shodan", "sfp_virustotal"],
     "metadata_domain": ["sfp_metadata"]
 }
+# This sets up a basic logger that prints timestamped messages
+logging.basicConfig(
+    level=logging.INFO, # Set the minimum level of messages to log
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 async def start_scan_job(request: ScanRequest) -> int:
-    print("🔧 DEBUG: Inside start_scan_job()")
+    logging.info("Scan job initiated...")
     db = SessionLocal()
     scan_id = None # Initialize scan_id
 
     try:
         data_type = request.data_type.strip().lower()
-        print("DEBUG: Normalized data_type =", data_type)
+        logging.info(f"Normalized data_type = {data_type}") 
 
         if data_type not in DATA_TYPE_REGEX_MAP:
-            print("❌ ERROR: Invalid data_type:", data_type)
+            logging.error(f"Invalid data_type received: {data_type}")
             return None
 
         pattern = request.custom_regex or DATA_TYPE_REGEX_MAP[data_type]
-        print("DEBUG: Using pattern:", pattern)
+        logging.info(f"Using pattern for validation: {pattern}") 
 
         if not re.match(pattern, request.search_data):
             print("❌ ERROR: Pattern did not match:", request.search_data)
             return None
 
-        print("DEBUG: Creating ScanJob...")
+        logging.info("Creating ScanJob in the database...") 
         scan_job = models.ScanJob.create(
             data_type=data_type,
             search_data=request.search_data,
@@ -50,12 +58,12 @@ async def start_scan_job(request: ScanRequest) -> int:
             created_at=datetime.utcnow()
         )
         scan_id = scan_job.id
-        print("✅ ScanJob created with ID:", scan_id)
+        logging.info(f"ScanJob created successfully with ID: {scan_id}")
 
         # Add status entries for all tools
         tools = ["trufflehog", "google_dork", "spiderfoot", "hibp_emails", "sherlock", "hibp_passwords"]
         for tool in tools:
-            print(f"⏳ Creating ToolStatus: {tool}")
+            logging.info(f"Creating pending ToolStatus for: {tool}")
             models.ToolStatus.create(
                 job_id=scan_id,
                 tool_name=tool,
@@ -64,9 +72,9 @@ async def start_scan_job(request: ScanRequest) -> int:
         
         # --- HIBP PASSWORD WORKFLOW ---
         if data_type == "password":
-            print("⚙️ Running HIBP Password Check...")
+            logging.info("Running HIBP Password Check...")
             result = check_pwned_password(request.search_data)
-            print("🔍 HIBP Password result:", result)
+            logging.info(f"HIBP Password result: {result}")
 
             models.ToolStatus.update_status(
                 db, scan_id, "hibp_passwords",
@@ -90,9 +98,9 @@ async def start_scan_job(request: ScanRequest) -> int:
 
         # --- Sherlock Username Workflow ---
         if data_type == "username":
-            print("⚙️ Running Sherlock...")
+            logging.info("Running Sherlock...")
             result = run_sherlock(request.search_data)
-            print("🔍 Sherlock result:", result)
+            logging.info(f"Sherlock result: {result}") 
 
             models.ToolStatus.update_status(
                 db, scan_id, "sherlock",
@@ -112,9 +120,9 @@ async def start_scan_job(request: ScanRequest) -> int:
 
         # --- HIBP Email Workflow ---
         if data_type == "email":
-            print("⚙️ Running HIBP Email Breach Check...")
+            logging.info("Running HIBP Email Breach Check...")
             result = check_hibp_breaches(request.search_data)
-            print("🔍 HIBP Email Breach result:", result)
+            logging.info(f"HIBP Email Breach result: {result}")
             models.ToolStatus.update_status(
                 db, scan_id, "hibp_emails",
                 "completed" if result["success"] else "failed",
@@ -145,11 +153,11 @@ async def start_scan_job(request: ScanRequest) -> int:
         # --- SpiderFoot Workflow ---
         if data_type in SPIDERFOOT_MODULE_MAP:
             modules_to_run = SPIDERFOOT_MODULE_MAP[data_type]
-            print(f"⚙️ Running SpiderFoot Scan with modules: {modules_to_run}...")
+            logging.info(f"Running SpiderFoot Scan with modules: {modules_to_run}...")
             
             # Call the wrapper with the specific modules
             result = run_spiderfoot(request.search_data, modules=modules_to_run)
-            print("🔍 SpiderFoot result:", result)
+            logging.info(f"SpiderFoot result: {result}")
 
             models.ToolStatus.update_status(
                 db, scan_id, "spiderfoot",
@@ -169,10 +177,47 @@ async def start_scan_job(request: ScanRequest) -> int:
                     result_type="json",
                     source_url="https://www.spiderfoot.net/"
                 )
+            # --- Google API Workflow ---
+        from app.services.google_search import run_google_dork
 
+        # --- Google Dork Workflow ---
+        if data_type in ["phone", "ic"]:  # Only run for phone or IC
+            print("⚙️ Running Google Custom Search...")
+            logging.info("Running Google Custom Search...") 
+
+            try:
+                success = bool(result.get("success"))
+                hits = result.get("results", []) or []
+                logging.info("orchestrator: run_google_dork returned success=%s results_count=%d", success, len(hits))
+                # log a compact JSON sample of up to first 5 hits for inspection
+                if hits:
+                    sample = hits[:5]
+                    logging.debug("orchestrator: run_google_dork sample hits: %s", json.dumps(sample, ensure_ascii=False) )
+                else:
+                    logging.debug("orchestrator: run_google_dork returned zero hits for query=%s", request.search_data)
+            except Exception as e:
+                logging.exception("orchestrator: error while inspecting run_google_dork result: %s", e)
+            # ----------------------------------------------------------------
+
+            models.ToolStatus.update_status(
+                db, scan_id, "google_dork",
+                "completed" if result["success"] else "failed",
+                result.get("error")
+            )
+
+            if result["success"]:
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="google_dork",
+                    result=result["results"],
+                    confidence=0.8,
+                    severity="medium",
+                    result_type="json",
+                    source_url="https://cse.google.com/"
+                )
 
         # Simulate other tools 
-        for tool in ["google_dork", "trufflehog"]:
+        for tool in ["trufflehog"]:
             models.ScanResult.create(
                 job_id=scan_id,
                 tool_name=tool,
@@ -184,7 +229,7 @@ async def start_scan_job(request: ScanRequest) -> int:
             )
             models.ToolStatus.update_status(db, scan_id, tool, "completed")
 
-        print(f"✅ Finished all tool scans for Job ID: {scan_id}. Updating final status to 'completed'.")
+        logging.info(f"Finished all tool scans for Job ID: {scan_id}. Updating final status to 'completed'.")
         
         # --- MODIFIED: Switched to modern SQLAlchemy 2.0 query style ---
         stmt = select(models.ScanJob).where(models.ScanJob.id == scan_id)
@@ -193,14 +238,14 @@ async def start_scan_job(request: ScanRequest) -> int:
         if final_scan_job:
             final_scan_job.status = "completed"
             db.commit()
-            print(f"✅ Successfully updated Job ID: {scan_id} to 'completed'.")
+            logging.info(f"Successfully updated Job ID: {scan_id} to 'completed'.")
         else:
-            print(f"❌ ERROR: Could not find Job ID: {scan_id} in the database to finalize status.")
+            logging.error(f"Could not find Job ID: {scan_id} in the database to finalize status.")
         
         return scan_id
 
     except Exception as e:
-        print(f"❌ FATAL ERROR during scan job {scan_id}: {str(e)}")
+        logging.exception(f"FATAL ERROR during scan job {scan_id}: {e}")
         if scan_id:
             # --- MODIFIED: Switched to modern SQLAlchemy 2.0 query style ---
             stmt = select(models.ScanJob).where(models.ScanJob.id == scan_id)

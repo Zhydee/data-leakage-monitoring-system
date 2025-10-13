@@ -51,8 +51,8 @@ st.markdown("""
             border-right: 1px solid #D1D5DB;
         }
         
-        /* --- Compact Button Styling --- */
-        .stButton>button {
+        /* --- MODIFICATION: ADDED SELECTOR FOR FORM SUBMIT BUTTON --- */
+        .stButton>button, [data-testid="stFormSubmitButton"]>button {
             border: 2px solid #f39c12;
             background-color: #f39c12;
             color: #FFFFFF;
@@ -62,7 +62,7 @@ st.markdown("""
             font-size: 0.9rem;
             transition: all 0.3s ease;
         }
-        .stButton>button:hover {
+        .stButton>button:hover, [data-testid="stFormSubmitButton"]>button:hover {
             background-color: #e67e22;
             border-color: #e67e22;
         }
@@ -168,6 +168,96 @@ RECOMMENDATION_MAP = {
         Click the link to review this profile. Check for any personal information (like your location, workplace, or phone number) that you did not intend to be public. Consider updating your privacy settings on that site.
     """
 }
+# --- Google Custom Search (Google Dork) friendly display ---
+def render_google_results_block(results):
+    """
+    Nicely formatted Google Custom Search block for Streamlit.
+    Paste this function to replace your existing render_google_results_block.
+    """
+    google_result = results.get("google_dork")
+    # Normalise shape (supports either list or {"data": [...]})
+    if isinstance(google_result, dict) and isinstance(google_result.get("data"), list):
+        google_list = google_result["data"]
+    elif isinstance(google_result, list):
+        google_list = google_result
+    else:
+        google_list = []
+
+    # Small CSS for "pill" badges
+    pill_css = """
+    <style>
+      .pill { display:inline-block; margin:4px 6px 4px 0; padding:6px 10px; 
+              border-radius:999px; background:#f1f5f9; color:#0f172a; font-family:inherit; }
+      .source_link { font-weight:600; font-size:16px; color:#0b69ff; text-decoration:none; }
+      .snippet { color:#334155; margin-top:6px; margin-bottom:6px; font-style:italic; }
+      .card { padding:14px 18px; border-radius:8px; background: #ffffff; box-shadow: 0 1px 4px rgba(15,23,42,0.04); }
+      .meta { color:#475569; font-size:13px; }
+      .divider { margin-top:12px; margin-bottom:12px; border-top:1px solid #e6eef8; }
+    </style>
+    """
+
+    if not google_list:
+        st.info("Nice — no public matches found right now. Your data looks safe ✅")
+        return
+
+    # Header
+    st.markdown("### 🔎 Google Custom Search (Public Web Findings)")
+    st.info(f"Found **{len(google_list)}** source(s) from Google Custom Search.")
+
+    # Inject pill CSS once
+    st.markdown(pill_css, unsafe_allow_html=True)
+
+    # Render each result as a card
+    for gr in google_list:
+        src = gr.get("source_url", "") or "N/A"
+        matches = gr.get("matches", {}) or {}
+        ic_matches = matches.get("ic_numbers", []) or []
+        phone_matches = matches.get("phone_numbers", []) or []
+        snippet = (gr.get("snippet") or "").strip()
+
+        with st.container():
+            cols = st.columns([8, 2])
+            # left column: source + pills + snippet
+            left = cols[0]
+            right = cols[1]
+
+            # Source link (clickable)
+            if src and src != "N/A":
+                left.markdown(f"<a class='source_link' href='{src}' target='_blank' rel='noopener noreferrer'>🔗 {src}</a>", unsafe_allow_html=True)
+            else:
+                left.markdown("🔗 N/A")
+
+            # Pills for phone & IC matches
+            pills_html = ""
+            if phone_matches:
+                pills_html += "<div style='margin-top:8px'><strong>Phone:</strong> "
+                for p in phone_matches:
+                    pills_html += f"<span class='pill'>{p}</span>"
+                pills_html += "</div>"
+            if ic_matches:
+                pills_html += "<div style='margin-top:6px'><strong>IC:</strong> "
+                for i in ic_matches:
+                    pills_html += f"<span class='pill'>{i}</span>"
+                pills_html += "</div>"
+
+            if pills_html:
+                left.markdown(pills_html, unsafe_allow_html=True)
+
+            # Right column: compact meta (counts)
+            total_hits = len(phone_matches) + len(ic_matches)
+            right.markdown(f"<div class='meta'>Hits: <strong>{total_hits}</strong></div>", unsafe_allow_html=True)
+
+            # Snippet (shorten to 300 chars)
+            if snippet:
+                trimmed = snippet if len(snippet) <= 300 else snippet[:297].rstrip() + "..."
+                left.markdown(f"<div class='snippet'>{trimmed}</div>", unsafe_allow_html=True)
+            else:
+                left.markdown("<div class='meta'>No snippet available.</div>", unsafe_allow_html=True)
+
+            # divider
+            st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+
+
 
 # --- BACKEND CONNECTION TEST ---
 try:
@@ -196,8 +286,11 @@ with st.sidebar:
 if selected == "Scanner":
     st.header("🔍 Data Leakage Scanner")
     st.markdown("Select a data type and provide the information to scan across all integrated OSINT platforms.")
+
     with st.container(border=True):
         col1, col2 = st.columns([1, 2], gap="large")
+
+        # --- Column 1: The controlling widget, placed OUTSIDE the form ---
         with col1:
             st.subheader("1. Select Data Type")
             data_type = st.selectbox(
@@ -206,41 +299,64 @@ if selected == "Scanner":
                 label_visibility="collapsed",
                 help="Select the type of data you want to scan for leaks."
             )
+
+        # --- Column 2: The entire form is placed here ---
         with col2:
-            help_messages = {
-                "Email Address": "Check if your email has been leaked in public data breaches. e.g., user@example.com",
-                "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
-                "Phone Number": "Find out if your phone number is exposed in public sources. Format: 012-3456789",
-                "Username": "Scan the internet for social media and forum accounts matching a username.",
-                "Domain Name": "Discover if a domain (e.g., example.com) has been associated with leaked data.",
-                "IP Address": "Check if an IP address is publicly exposed or mentioned.",
-                "Credit Card Number": "Scan for potential credit card leaks (input is masked and protected).",
-                "IC Number": "Monitor Malaysian IC number exposure. Format: xxxxxx-xx-xxxx",
-                "API Keys/Tokens": "Scan all of public GitHub for an exposed secret (e.g., API key, password, token).",
-                "Document Metadata (from Domain)": "Enter a domain (e.g., example.com) to find and analyze public documents for metadata."
-            }
-            
-            if data_type == "Password":
-                search_data = st.text_input(
-                    label="2. Provide Input Data",
-                    type="password",
-                    placeholder="Enter password to check...",
-                    help=help_messages.get(data_type)
-                )
-            else:
-                search_data = st.text_area(
-                    label="2. Provide Input Data",
-                    height=100,
-                    placeholder=f"Enter {data_type.lower()} to search...",
-                    help=help_messages.get(data_type)
-                )
-        st.markdown("<hr style='border: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
-        scan_button = st.button("🚀 Start Comprehensive Scan", use_container_width=True)
+            # The form starts here, encapsulating everything that needs to be submitted
+            with st.form(key="scan_form"):
+                help_messages = {
+                    "Email Address": "Check if your email has been leaked in public data breaches.",
+                    "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
+                    "Phone Number": "Find out if your phone number is exposed in public sources.",
+                    "Username": "Scan the internet for social media and forum accounts matching a username.",
+                    "Domain Name": "Discover if a domain has been associated with leaked data.",
+                    "IP Address": "Check if an IP address is publicly exposed or mentioned.",
+                    "Credit Card Number": "Scan for potential credit card leaks (input is masked and protected).",
+                    "IC Number": "Monitor Malaysian IC number exposure.",
+                    "API Keys/Tokens": "Scan all of public GitHub for an exposed secret (e.g., API key, password, token).",
+                    "Document Metadata (from Domain)": "Enter a domain to find and analyze public documents for metadata."
+                }
+                
+                placeholder_examples = {
+                    "Email Address": "e.g., user@example.com",
+                    "Password": "Enter a password to check its exposure",
+                    "Phone Number": "e.g., 012-3456789 or +60123456789",
+                    "Username": "e.g., testuser123",
+                    "Domain Name": "e.g., example.com",
+                    "IP Address": "e.g., 8.8.8.8",
+                    "Credit Card Number": "e.g., 4111222233334444",
+                    "IC Number": "e.g., 990101-14-1234",
+                    "API Keys/Tokens": "e.g., ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890",
+                    "Document Metadata (from Domain)": "e.g., example.com"
+                }
+
+                # The input widget is now correctly inside the form
+                if data_type == "Password":
+                    search_data = st.text_input(
+                        label="2. Provide Input Data",
+                        type="password",
+                        placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
+                        help=help_messages.get(data_type)
+                    )
+                else:
+                    search_data = st.text_input(
+                        label="2. Provide Input Data",
+                        placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
+                        help=help_messages.get(data_type)
+                    )
+
+                st.markdown("<hr style='border: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
+                
+                # The submit button is also inside the form
+                scan_button = st.form_submit_button("🚀 Start Comprehensive Scan", use_container_width=True)
+
+    # --- The submission logic block is OUTSIDE all layout elements ---
+    # This part remains unchanged and will now work correctly.
     if scan_button:
         if search_data:
             regex_patterns = {
                 "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                "Password": r".{6,}", "Phone Number": r"(\+?1[-.\s]?)?(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+                "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
                 "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
                 "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
                 "Credit Card Number": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
@@ -267,6 +383,7 @@ if selected == "Scanner":
                         st.error(f"❌ Error initiating scan: {str(e)}", icon="🔥")
         else:
             st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
+
 # --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
 
 elif selected == "Scan History":
@@ -702,6 +819,11 @@ elif selected == "Scan History":
                                     st.error("Could not parse raw Shodan data.")
                         else:
                             st.info("No SpiderFoot results available for this scan.")
+                    elif scan['data_type'] == 'phone number & IC number' or scan['data_type'] in ("phone", "ic"):
+
+                        render_google_results_block(results)
+
+
                     else:
                         st.markdown("### 🛠️ Tool Outputs")
                         for tool, result in results.items():

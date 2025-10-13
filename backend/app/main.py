@@ -1,21 +1,27 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env")
 import os
+# --- RATE LIMITING IMPORTS ---
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.limiter import limiter # Import the new shared limiter
+
 from app.api.routes import scan # Import the scan router
 from app.api.routes import history
 
 load_dotenv()
 
 app = FastAPI(
-    title="OSINT Data Leakage Monitor System",
+    title="Data Leakage Monitor System",
     description="A unified system for comprehensive data leakage monitoring across multiple platforms",
     version="1.0.0"
 )
-
-app = FastAPI()
-app.include_router(scan.router, prefix="/scan")
+# --- The limiter to the app's state ---
+app.state.limiter = limiter
+# --- The exception handler for rate limit errors ---
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(
