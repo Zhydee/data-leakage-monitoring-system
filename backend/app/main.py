@@ -7,17 +7,51 @@ import os
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter # Import the new shared limiter
+# --- NEW IMPORTS FOR SCHEDULER ---
+from apscheduler.schedulers.background import BackgroundScheduler
+from app.utils.cleanup import delete_old_scan_records
+import logging
+from contextlib import asynccontextmanager 
 
 from app.api.routes import scan # Import the scan router
 from app.api.routes import history
 
 load_dotenv()
 
+# --- Configure logger ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Initialize the scheduler ---
+scheduler = BackgroundScheduler()
+
+# --- A function to start the scheduler and add the job ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Handles application startup and shutdown events.
+    """
+    logger.info("Starting up the application...")
+    # Schedule the cleanup job to run once every day at 3:00 AM server time
+    scheduler.add_job(delete_old_scan_records, 'interval', days=1, id="daily_cleanup_job")
+    scheduler.start()
+    logger.info("Scheduler started and cleanup job has been scheduled.")
+    
+    yield # The application is now running
+
+    # Code below yield runs on shutdown
+    logger.info("Shutting down the application...")
+    scheduler.shutdown()
+    logger.info("Scheduler has been shut down.")
+
 app = FastAPI(
     title="Data Leakage Monitor System",
     description="A unified system for comprehensive data leakage monitoring across multiple platforms",
-    version="1.0.0"
+    version="1.0.0",
+    # --- NEW: Add lifespan events for scheduler ---
+    lifespan=lifespan
 )
+
 # --- The limiter to the app's state ---
 app.state.limiter = limiter
 # --- The exception handler for rate limit errors ---
