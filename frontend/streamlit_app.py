@@ -96,7 +96,7 @@ st.markdown("""
 backend_data_type_map = {
     "Email Address": "email", "Password": "password", "Phone Number": "phone",
     "Username": "username", "Domain Name": "domain", "IP Address": "ip",
-    "Credit Card Number": "credit_card", "IC Number": "ic", "API Keys/Tokens": "api_key","Document Metadata (from Domain)": "metadata_domain"
+    "Credit Card Number": "credit_card", "IC Number": "ic", "API Keys/Tokens": "api_key"
 }
 display_name_map = {v: k for k, v in backend_data_type_map.items()}
 
@@ -168,6 +168,115 @@ RECOMMENDATION_MAP = {
         Click the link to review this profile. Check for any personal information (like your location, workplace, or phone number) that you did not intend to be public. Consider updating your privacy settings on that site.
     """
 }
+# HELPER FUNCTION TO RENDER SEVERITY BADGES
+def render_severity_badge(severity: str):
+    """Generates a styled HTML badge for a given severity level."""
+    severity = severity.upper()
+    severity_styles = {
+        "CRITICAL": "background-color:#8B0000; color:white;",
+        "HIGH": "background-color:#c62828; color:white;",
+        "MEDIUM": "background-color:#f9a825; color:black;",
+        "LOW": "background-color:#2e7d32; color:white;",
+    }
+    style = severity_styles.get(severity, "background-color:#546e7a; color:white;")
+    
+    return f"<span style='{style} padding: 5px 12px; border-radius:15px; font-size:0.9rem; font-weight:bold;'>{severity.capitalize()}</span>"
+
+# --- NEW HELPER FUNCTION TO CALCULATE OVERALL SEVERITY ---
+def calculate_overall_severity(scan_type: str, results: dict) -> str | None:
+    """Calculates a single severity level based on the scan type and its results."""
+    
+    # --- CRITICAL SEVERITY ---
+    if scan_type == 'username':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            if any(r.get('module') == 'sfp_breachcompilation' for r in spiderfoot_result.get("data", [])):
+                return "CRITICAL"
+
+    if scan_type == 'email':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            if any(r.get('module') == 'sfp_leakix' for r in spiderfoot_result.get("data", [])):
+                return "CRITICAL"
+
+    if scan_type == 'password':
+        hibp_result = results.get('hibp_passwords', {})
+        if isinstance(hibp_result, dict) and hibp_result.get("data", {}).get("pwned", False):
+            return "CRITICAL"
+
+    if scan_type == 'ip':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            vt_results = [r for r in spiderfoot_result.get("data", []) if r.get('module') == 'sfp_virustotal']
+            if vt_results:
+                detections_str = vt_results[0].get('data', '0/0').split('/')[0]
+                if detections_str.isdigit() and int(detections_str) > 0:
+                    return "CRITICAL"
+
+    if scan_type == 'api_key':
+        trufflehog_result = results.get('trufflehog', {})
+        if isinstance(trufflehog_result, dict) and trufflehog_result.get("data"):
+            return "CRITICAL"
+            
+    if scan_type == 'credit_card':
+        google_result = results.get("google_dork", {})
+        if isinstance(google_result, dict) and google_result.get("data"):
+            return "CRITICAL"
+
+    # --- HIGH SEVERITY ---
+    if scan_type == 'email':
+        hibp_result = results.get('hibp_emails', {})
+        if isinstance(hibp_result, dict) and hibp_result.get("data"):
+            return "HIGH"
+
+    if scan_type in ('phone', 'ic'):
+        google_result = results.get("google_dork", {})
+        if isinstance(google_result, dict) and google_result.get("data"):
+            return "HIGH"
+
+    if scan_type == 'metadata_domain':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and spiderfoot_result.get("data"):
+            return "HIGH"
+            
+    if scan_type == 'domain':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            whois_results = [r for r in spiderfoot_result.get("data", []) if r.get('module') == 'sfp_whois']
+            if whois_results:
+                raw_whois = whois_results[0].get('data', '')
+                if "REDACTED" not in raw_whois and "Privacy" not in raw_whois:
+                    return "HIGH"
+
+    if scan_type == 'ip':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            if any(r.get('module') == 'sfp_shodan' for r in spiderfoot_result.get("data", [])):
+                return "HIGH"
+
+    # --- MEDIUM SEVERITY ---
+    if scan_type == 'email':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+            if any(r.get('module') == 'sfp_whois' for r in spiderfoot_result.get("data", [])):
+                return "MEDIUM"
+
+    # --- LOW SEVERITY ---
+    if scan_type == 'username':
+        sherlock_result = results.get('sherlock', {})
+        spiderfoot_result = results.get('spiderfoot', {})
+        sherlock_found = isinstance(sherlock_result, dict) and sherlock_result.get("data")
+        spiderfoot_found = isinstance(spiderfoot_result, dict) and any(r.get('module') == 'sfp_accounts' for r in spiderfoot_result.get("data", []))
+        if sherlock_found or spiderfoot_found:
+            return "LOW"
+            
+    if scan_type == 'domain':
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and spiderfoot_result.get("data"):
+            return "LOW"
+
+    return None
+
 # --- Google Custom Search (Google Dork) friendly display ---
 def render_google_results_block(results):
     """
@@ -402,7 +511,7 @@ elif selected == "Scan History":
                 expander_title = f"Scan ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
                 
                 with st.expander(expander_title, expanded=False):
-                    # --- Timestamp and Status (from your original code) ---
+                    # --- Timestamp and Status ---
                     dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
                     try:
                         locale.setlocale(locale.LC_TIME, "en_US.utf8")
@@ -410,9 +519,15 @@ elif selected == "Scan History":
                         locale.setlocale(locale.LC_TIME, "")
                     formatted_date = dt.strftime("%d %B %Y, %I:%M %p")
                     st.markdown(f"**🕒 Timestamp:** {formatted_date} | **Status:** `{scan['status']}`")
-                    st.markdown("---")
-
+                    
                     results = scan.get("results", {})
+
+                    # --- UNIFIED SEVERITY CALCULATION AND DISPLAY ---
+                    severity = calculate_overall_severity(scan['data_type'], results)
+                    if severity:
+                        st.markdown(f"**Overall Severity:** {render_severity_badge(severity)}", unsafe_allow_html=True)
+                    
+                    st.markdown("---")
 
                     # --- ENRICHED/CONSOLIDATED VIEWS ---
 
@@ -424,7 +539,6 @@ elif selected == "Scan History":
                         spiderfoot_result = results.get('spiderfoot')
                         
                         st.subheader("Social Media Presence (from Sherlock)")
-                        # Use the exact safe pattern from your original code
                         if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list):
                             sherlock_data = sherlock_result["data"]
                             if not sherlock_data:
@@ -438,94 +552,19 @@ elif selected == "Scan History":
                         else:
                             st.info("No Sherlock results available for this scan.")
 
-                        st.markdown("---")
-                        # --- THIS IS THE NEW CODE BLOCK TO USE ---
-                        st.subheader("Correlated OSINT Data (from SpiderFoot)")
-                        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                            spiderfoot_data = spiderfoot_result["data"]
-
-                            # --- 1. CHECK FOR HIGH-RISK DATA BREACHES FIRST ---
-                            breach_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_breachcompilation']
-                            
-                            # --- 2. DISPLAY THE BREACH ALERT IF FOUND ---
-                            if breach_results:
-                                st.error("🚨 **Data Breach Alert**", icon="🔥")
-                                with st.container(border=True):
-                                    st.markdown("""
-                                    This username was found in a list of accounts from a past data breach. This is a **high-risk finding**.
-                                    
-                                    **What this means:** Attackers may have access to an old password associated with this username. If you reuse passwords, other accounts could be at risk.
-                                    """)
-                                    with st.expander("See breach details"):
-                                        for item in breach_results:
-                                            st.code(item.get('data', 'No details available.'), language="text")
-                                st.markdown("---")
-
-                            # --- 3. DISPLAY FOUND ONLINE ACCOUNTS WITH DYNAMIC CONTEXT ---
-                            account_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_accounts']
-
-                            if account_results:
-                                # --- THIS IS THE NEW DYNAMIC PART ---
-                                if breach_results:
-                                    # If there was a breach, the message is URGENT
-                                    st.error(f"**CRITICAL ACTION:** Review these {len(account_results)} accounts immediately.", icon="🛡️")
-                                    st.markdown("""
-                                    Because your username was in a data breach, it is critical to ensure these accounts are protected with **strong, unique passwords**. Attackers will try to use leaked passwords to log into other sites.
-                                    """)
-                                else:
-                                    # If no breach, the message is INFORMATIVE
-                                    st.warning(f"Found **{len(account_results)}** potential online accounts:", icon="⚠️")
-                                    st.markdown("""
-                                    Below is a list of public accounts found across the internet. It is recommended you review each one to understand what information about you is visible to the public.
-                                    """)
-
-                                # The loop for displaying cards remains the same
-                                for item in account_results:
-                                    # We still parse the data as before
-                                    clean_data = parse_spiderfoot_account(item.get('data', ''))
-                                    
-                                    # We display every result in a container
-                                    with st.container(border=True):
-                                        # Display the title (this will always work)
-                                        title = f"🌐 {clean_data['platform']}"
-                                        if clean_data['category'] and clean_data['category'] != 'N/A':
-                                            title += f" <span style='font-size: 0.9rem; color: #555; font-weight: normal;'>({clean_data['category']})</span>"
-                                        st.markdown(f"<h5>{title}</h5>", unsafe_allow_html=True)
-
-                                        # --- THE KEY FIX IS HERE ---
-                                        # Only display the "Link:" markdown if the URL is not empty
-                                        if clean_data['url']:
-                                            st.markdown(f"**Link:** [{clean_data['url']}]({clean_data['url']})")
-                                        else:
-                                            # Optionally, you can inform the user that no direct link was found
-                                            st.markdown("_No direct link was automatically found._")
-
-                                        # The recommendation part remains the same
-                                        recommendation = RECOMMENDATION_MAP.get(clean_data.get('category'), RECOMMENDATION_MAP['default'])
-                                        st.markdown(recommendation, unsafe_allow_html=True)
-
-                            # Final check if no results of any kind were found
-                            if not breach_results and not account_results:
-                                st.success("✅ No public online accounts or breach data were found by SpiderFoot.")
-
-                        else:
-                            st.info("No SpiderFoot results available for this scan.")
 
                     # 2. ENRICHED EMAIL VIEW
                     elif scan['data_type'] == 'email':
                         st.markdown("### 📧 Email Exposure Analysis")
                         
                         hibp_result = results.get('hibp_emails')
-                        spiderfoot_result = results.get('spiderfoot')
 
-                        # --- 1. Display the main HIBP Breach Results (from the working tool) ---
                         st.subheader("Data Breach Exposure (from HIBP)")
                         if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list):
                             hibp_data = hibp_result["data"]
                             if not hibp_data:
                                 st.success("✅ No public breaches found for this email by HIBP.")
                             else:
-                                # Your existing, excellent HIBP display logic
                                 st.error(f"🚨 Found in {len(hibp_data)} Public Data Breaches", icon="🔥")
                                 for breach in hibp_data:
                                     with st.container(border=True):
@@ -534,76 +573,7 @@ elif selected == "Scan History":
                                         st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
                         else:
                             st.info("No HIBP results available for this scan.")
-
-                        # --- 2. Display the "Broader Digital Footprint" from SpiderFoot ---
-                        st.markdown("---")
-                        st.subheader("🌐 Broader Digital Footprint")
-                        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                            spiderfoot_data = spiderfoot_result["data"]
-                            
-                            # Create flags to track if we found anything
-                            found_leakix = False
-                            found_whois = False
-
-                            # --- 1. URGENT: Check for Exposed Server Data (LeakIX) ---
-                            leakix_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_leakix']
-                            if leakix_results:
-                                found_leakix = True
-                                st.error("🚨 **URGENT: Data Found on an Exposed Server**", icon="🔥")
-                                with st.container(border=True):
-                                    st.markdown("""
-                                    Your email address was found in data that is publicly exposed on a misconfigured server. 
-                                    This is a **high-risk finding** that should be reported.
-                                    """)
-                                    st.markdown("""
-                                    **What you should do:**
-                                    1.  **Take a screenshot** of this finding, including the technical details below.
-                                    2.  **Report this immediately** to your company's IT or security department if it is a work-related email.
-                                    3.  **Do not** attempt to access the server or data yourself.
-                                    """)
-                                    with st.expander("Show Technical Details for IT Department"):
-                                        for item in leakix_results:
-                                            st.code(item.get('data', 'No details available.'), language="text")
-                                st.markdown("---")
-
-                            # --- 2. Check for Domain Registrations ---
-                            whois_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_whois']
-                            if whois_results:
-                                found_whois = True
-                                with st.container(border=True):
-                                    st.warning("🌐 Linked to Website Ownership (WHOIS)", icon="⚠️")
-                                    st.markdown("""
-                                    This email address was found in the public registration records for one or more website domains. This creates a direct link between your email and the ownership of a website.
-                                    """)
-                                    with st.expander("See raw WHOIS data"):
-                                        for item in whois_results:
-                                            st.code(item.get('data', 'No details available.'), language="text")
-
-                            # --- 3. Show a "No Results" message only if nothing was found ---
-                            if not found_leakix and not found_whois:
-                                st.success("✅ No data leaks on exposed servers or domain links were found by SpiderFoot.")
-
-                        else:
-                            st.info("✅ No additional data leaks or public links were found.")
-                                                
-                    # 3. NEW METADATA DISPLAY
-                    elif scan['data_type'] == 'metadata_domain':
-                        st.markdown("### 📄 Metadata Leakage Analysis")
-                        spiderfoot_result = results.get('spiderfoot')
-
-                        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                            spiderfoot_data = spiderfoot_result["data"]
-                            if not spiderfoot_data:
-                                st.success("✅ No documents with extractable metadata were found.")
-                            else:
-                                st.error(f"🚨 Found **{len(spiderfoot_data)}** files with metadata:", icon="🔥")
-                                for item in spiderfoot_data:
-                                    with st.container(border=True):
-                                        st.markdown(f"**File:** `{item.get('source_uri', 'N/A')}`")
-                                        st.code(item.get('data'), language='text')
-                        else:
-                            st.info("No SpiderFoot results available for this scan.")
-                    # --- ADD THIS NEW BLOCK FOR DOMAIN SCANS ---
+                                            
 
                     # 2.5 (NEW) ENRICHED DOMAIN VIEW
                     elif scan['data_type'] == 'domain':
@@ -615,8 +585,6 @@ elif selected == "Scan History":
                         if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
                             spiderfoot_data = spiderfoot_result["data"]
                             
-                            # --- Card 1: Ownership Information (WHOIS) - REIMAGINED ---
-                            # THIS IS THE CORRECTED LINE
                             whois_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_whois']
                             if whois_results:
                                 with st.container(border=True):
@@ -625,7 +593,6 @@ elif selected == "Scan History":
 
                                     raw_whois = whois_results[0].get('data', '')
                                     
-                                    # --- Simplified Key Details ---
                                     st.markdown("---")
                                     st.subheader("Key Information")
                                     col1, col2, col3 = st.columns(3)
@@ -640,96 +607,78 @@ elif selected == "Scan History":
                                         st.metric(label="⏳ Expires On", value=expiry_date_str.split('T')[0] if 'T' in expiry_date_str else expiry_date_str)
                                     st.markdown("---")
                                     
-                                    # --- Actionable Insights & Recommendations ---
                                     st.subheader("Why This Matters & Recommendations")
                                     
-                                    # Check if contact info is redacted, which implies privacy is enabled.
                                     if "REDACTED" in raw_whois or "Privacy" in raw_whois:
                                         st.success("""
                                             **✅ Good News: Your personal contact information appears to be private.**
-                                            
                                             The record shows that details like your name, address, and email are hidden. This is excellent for security, as it prevents spammers and scammers from harvesting your personal data from this public record.
                                         """, icon="🛡️")
                                     else:
                                         st.error("""
                                             **⚠️ High-Risk Alert: Your Personal Information is Public.**
-                                            
                                             The ownership record for this domain appears to contain public contact details (name, address, email). This is a significant privacy risk.
-                                            
                                             **💡 Recommendation:** Contact your domain provider (the 'Registrar' listed above) and ask to enable **"WHOIS Privacy"** or **"Domain Privacy Protection."** Most providers offer this service for free or a small fee to hide your personal details.
                                         """, icon="🔥")
 
                                     with st.expander("View the full raw technical record"):
                                         st.code(raw_whois, language="text")
 
-                            # --- Card 2: Technical DNS Records - REIMAGINED ---
                             dns_results = [r for r in spiderfoot_data if r.get('module') in ['sfp_dns', 'sfp_dnsresolve']]
                             if dns_results:
                                 with st.container(border=True):
                                     st.markdown("<h5>📡 Website & Email Server Connections (DNS)</h5>", unsafe_allow_html=True)
                                     st.info("**What is this?** These are the technical records that act like the internet's phonebook. They tell browsers where to find your website and email servers.", icon="💡")
                                     
-                                    # --- Simplified Key Details ---
                                     st.markdown("---")
                                     st.subheader("Key Connections")
 
-                                    # --- MODIFIED: A much smarter way to find the primary IP address ---
                                     primary_ip = None
                                     ipv4_candidate = None
                                     ipv6_candidate = None
                                     fallback_candidate = None
 
-                                    # Iterate through all DNS results to find the best possible IP
                                     for item in dns_results:
                                         item_type = item.get('type', '').upper()
                                         item_data = item.get('data', '')
                                         item_source = item.get('source', '')
 
-                                        # 1. The best case: an explicit IP_ADDRESS type for the main domain
                                         if item_type == 'IP_ADDRESS':
                                             ipv4_candidate = item_data
-                                            break # Found the highest priority match, stop searching
+                                            break
 
-                                        # 2. A good case: an explicit IPV6_ADDRESS
                                         if item_type == 'IPV6_ADDRESS' and not ipv6_candidate:
                                             ipv6_candidate = item_data
                                         
-                                        # 3. The fallback case from your logs: data matches domain, source is an IP
                                         if item_data == scan['search_data']:
-                                            # Simple check to see if the source string looks like an IP
                                             if '.' in item_source or ':' in item_source:
                                                 if not fallback_candidate:
                                                     fallback_candidate = item_source
 
-                                    # Decide which IP to show, in order of preference
                                     primary_ip = ipv4_candidate or ipv6_candidate or fallback_candidate
 
-                                    # Now, display the final result
                                     if primary_ip:
                                         st.metric(label="🌐 Website's Digital Address (IP)", value=primary_ip)
                                         st.markdown(f"This is the unique address of the server hosting your website. When someone types `{scan['search_data']}` into a browser, DNS tells it to go to `{primary_ip}`.")
                                     else:
-                                        # This message will now only show if NO IP of any kind was found
                                         st.markdown("No primary website address (IP Address) was found in this scan.")
 
                                     st.markdown("---")
                                     st.subheader("Why This Matters")
                                     st.markdown("""
                                     These records are essential for your online presence to function. If they are incorrect, your website or email service could go offline. While they don't typically contain sensitive personal data themselves, they confirm that your domain is actively connected to the internet.
-                                    
                                     **💡 Recommendation:** No action is typically needed here unless you are experiencing technical issues with your website or email. This information is mainly for verification and technical troubleshooting.
                                     """)
 
                                     with st.expander("View all technical DNS records"):
                                         for item in dns_results:
-                                            # Make the type more readable
                                             readable_type = item.get('type', 'N/A').replace('_', ' ').title()
                                             st.markdown(f"**{readable_type}:** `{item.get('data', 'N/A')}`")
 
                         else:
                             st.info("No SpiderFoot results available for this scan.")
-                    # 4. FALLBACK TO YOUR ORIGINAL WORKING CODE for all other data types
-                                        # 2.6 (NEW) ENRICHED IP ADDRESS VIEW
+
+                    # 2.6 (NEW) ENRICHED IP ADDRESS VIEW
                     elif scan['data_type'] == 'ip':
                         st.markdown("### 📈 IP Address Intelligence Report")
                         st.markdown("This report shows public information about this IP address, including associated hostnames, open services, and its reputation.")
@@ -739,16 +688,13 @@ elif selected == "Scan History":
                         if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
                             spiderfoot_data = spiderfoot_result["data"]
                             
-                            # --- Card 1: Reputation & Hostnames ---
                             vt_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_virustotal']
                             hostname_results = [r for r in spiderfoot_data if r.get('type', '').upper() == 'INTERNET_NAME']
 
                             with st.container(border=True):
                                 st.markdown("<h5>📝 Reputation & Associated Hostnames</h5>", unsafe_allow_html=True)
                                 
-                                # VirusTotal Reputation Check
                                 if vt_results:
-                                    # VT data is a string like "0/94", so we parse it
                                     detections = vt_results[0].get('data', '0/0').split('/')[0]
                                     if detections == "0":
                                         st.success("**✅ Reputation Clean:** This IP was not found in any security blacklists on VirusTotal.", icon="🛡️")
@@ -758,7 +704,6 @@ elif selected == "Scan History":
                                     st.info("Reputation data not available for this IP.")
 
                                 st.markdown("---")
-                                # Associated Hostnames
                                 if hostname_results:
                                     st.markdown(f"**Found {len(hostname_results)} associated hostname(s):**")
                                     for item in hostname_results:
@@ -766,10 +711,8 @@ elif selected == "Scan History":
                                 else:
                                     st.markdown("**No associated hostnames were found.** This could be a dynamic IP address or one not linked to a specific domain name.")
 
-                            # --- Card 2: Open Ports & Services (Shodan) ---
                             shodan_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_shodan']
                             if shodan_results:
-                                # Shodan data is a complex JSON string in the 'data' field, so we parse it
                                 import json
                                 shodan_data_str = shodan_results[0].get('data', '{}')
                                 try:
@@ -782,7 +725,6 @@ elif selected == "Scan History":
                                             help="Shodan scans the internet for devices. This data reveals what services are publicly accessible from this IP address."
                                         )
                                         
-                                        # Display Location and ISP
                                         st.subheader("Location & Provider")
                                         col1, col2, col3 = st.columns(3)
                                         with col1:
@@ -793,7 +735,6 @@ elif selected == "Scan History":
                                             st.metric("🏢 ISP", shodan_data.get('isp', 'N/A'))
                                         st.markdown("---")
 
-                                        # Display Open Ports
                                         st.subheader("Exposed Services / Open Ports")
                                         if shodan_data.get('data'):
                                             for service in shodan_data['data']:
@@ -805,11 +746,9 @@ elif selected == "Scan History":
                                             st.success("✅ No open ports or exposed services were identified by Shodan.")
                                         
                                         st.markdown("---")
-                                        # Why This Matters
                                         st.subheader("Why This Matters")
                                         st.warning("""
                                         **Exposed services can be a major security risk.** Each open port is a potential entry point for attackers. Services like databases (MySQL, PostgreSQL) or remote access (SSH, RDP) should almost never be exposed directly to the public internet.
-                                        
                                         **💡 Recommendation:** If this is your IP address, review the list above. Any service that is not intentionally public should be firewalled. Ensure all public services are up-to-date and securely configured.
                                         """)
                                         with st.expander("View full raw Shodan data"):
@@ -819,11 +758,12 @@ elif selected == "Scan History":
                                     st.error("Could not parse raw Shodan data.")
                         else:
                             st.info("No SpiderFoot results available for this scan.")
-                    elif scan['data_type'] == 'phone number & IC number' or scan['data_type'] in ("phone", "ic"):
-
+                    
+                    # 4. PHONE & IC VIEW
+                    elif scan['data_type'] in ("phone", "ic"):
                         render_google_results_block(results)
 
-
+                    # 5. FALLBACK TO RAW TOOL OUTPUTS
                     else:
                         st.markdown("### 🛠️ Tool Outputs")
                         for tool, result in results.items():
@@ -831,7 +771,6 @@ elif selected == "Scan History":
                             display_name = tool_display_names.get(tool, tool.replace('_', ' ').title())
                             st.markdown(f"<h5 style='margin-bottom:0.5rem; margin-top:1rem;'>🔧 {display_name}</h5>", unsafe_allow_html=True)
                             
-                            # Replicating your exact, proven logic from your original file
                             if tool == "hibp_passwords" and isinstance(result, dict) and isinstance(result.get("data"), dict):
                                 with st.container(border=True):
                                     is_pwned = result["data"].get("pwned", False)
@@ -859,7 +798,7 @@ elif selected == "Scan History":
                                 else:
                                     st.json(result["data"])
                             
-                            else: # This safely handles old string data or unexpected formats
+                            else:
                                 st.write(result)
         else:
             st.error(f"Failed to fetch scan history: Status code {res.status_code}")
@@ -871,14 +810,29 @@ elif selected == "About Tools":
     st.header("🛠️ Our OSINT Arsenal")
     st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
     tools_info = {
-        "🐷 TruffleHog": { "purpose": "Scans public GitHub repositories for exposed secrets.", "scans": ["Public GitHub Repositories", "API Keys & Tokens", "Passwords & Private Keys"] },
-        "🔍 theHarvester": { "purpose": "Gathers emails, subdomains, and more from public sources.", "scans": ["Email Addresses", "Subdomains & DNS Records"] },
-        "🕷️ SpiderFoot": { "purpose": "Automated reconnaissance to gather intelligence.", "scans": ["Domain & IP Intelligence", "Dark Web Mentions"] },
-        "🕵️ Sherlock": { "purpose": "Hunts down social media accounts by username.", "scans": ["400+ Social Media Platforms", "Forums & Communities"] },
-        "📧 HIBP API": { "purpose": "Checks for email and password compromise in public data breaches.", "scans": ["Leaked Emails & Passwords", "Comprehensive Breach Database"] }
+        "🐷 TruffleHog": { 
+            "purpose": "Scans public GitHub repositories for exposed secrets.", 
+            "scans": ["API Keys & Tokens", "Passwords & Private Keys"] 
+        },
+        "🌐 Google Custom Search": { 
+            "purpose": "Uses targeted search queries to find data indexed on the public web.", 
+            "scans": ["Phone Numbers", "IC Numbers"] 
+        },
+        "🕷️ SpiderFoot": { 
+            "purpose": "Automated OSINT to gather public intelligence on internet assets.", 
+            "scans": ["Domain & IP Intelligence", "Public Server Information (WHOIS, DNS)"] 
+        },
+        "🕵️ Sherlock": { 
+            "purpose": "Hunts down social media and forum accounts by username.", 
+            "scans": ["Social Media Profiles", "Forum Accounts"] 
+        },
+        "📧 HIBP API": { 
+            "purpose": "Checks against a massive database of known public data breaches.", 
+            "scans": ["Leaked Emails", "Exposed Passwords"] 
+        }
     }
     for tool, info in tools_info.items():
-        with st.expander(tool, expanded=True):
+        with st.expander(tool, expanded=False):
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**Purpose:**")
@@ -956,16 +910,21 @@ elif selected == "FAQ":
     with st.expander("**Where does the system search for my data?**"):
         st.markdown("""
         The system scans **only publicly available sources**. This includes places like:
-        - Public code repositories (e.g., GitHub)
-        - Public text-sharing sites (e.g., Pastebin and its alternatives)
-        - Publicly indexed web pages and documents found by search engines.
-        - Known data breach collections that are publicly accessible.
-        We **do not** access private databases, the deep web, or dark web resources. All scans are performed within the bounds of ethical open-source intelligence gathering.
+        - **Public Code Repositories:** Searching sites like GitHub for exposed API keys and secrets (via TruffleHog).
+        - **Public Web Pages:** Using targeted searches to find indexed information on websites and public documents (via Google Custom Search).
+        - **Social Media & Forums:** Searching for public profiles across hundreds of sites that match a username (via Sherlock).
+        - **Known Data Breaches:** Checking against a large, aggregated database of credentials from past public breaches (via HIBP).
+        - **Domain & IP Records:** Querying public records like WHOIS and DNS to understand a domain's footprint (via SpiderFoot).
+
+        We **do not** access private databases or systems. All scans are performed within the bounds of ethical open-source intelligence gathering.
         """)
     with st.expander("**Do you store my search history or results?**"):
         st.markdown("""
-        Yes, the results of your scans are stored temporarily in a secure database so you can review them in the **Scan History** tab. This data is linked only to your user session and is not made public.
-        For your privacy, we recommend you review your results and then delete old scan histories when you no longer need them.
+        Yes, the results of your scans are stored in a secure database so you can review them later in the **Scan History** tab. This data is linked only to your user session and is never made public or shared.
+
+        To protect your privacy, this data is not stored indefinitely. **All scan results are automatically and permanently deleted from our system after 14 days.**
+
+        This 14-day period provides a convenient window for you to review your findings, while ensuring your search history is not retained long-term, prioritizing your security and privacy.
         """)
     with st.expander("**Is this service legal to use?**"):
         st.markdown("""

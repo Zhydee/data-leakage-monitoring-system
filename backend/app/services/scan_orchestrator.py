@@ -17,10 +17,7 @@ from sqlalchemy import select
 
 SPIDERFOOT_MODULE_MAP = {
     "domain": ["sfp_dnsresolve", "sfp_dns", "sfp_whois"],
-    "username": ["sfp_accounts", "sfp_breachcompilation"],
-    "email": ["sfp_leakix", "sfp_whois"],
-    "ip": ["sfp_dnsresolve", "sfp_shodan", "sfp_virustotal"],
-    "metadata_domain": ["sfp_metadata"]
+    "ip": ["sfp_dnsresolve", "sfp_shodan", "sfp_virustotal"]
 }
 # This sets up a basic logger that prints timestamped messages
 logging.basicConfig(
