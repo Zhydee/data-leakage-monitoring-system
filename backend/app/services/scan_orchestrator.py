@@ -7,6 +7,7 @@ from tools.sherlock_wrapper import run_sherlock
 from tools.hibp_email import check_hibp_breaches
 from tools.hibp_passwords import check_pwned_password
 from tools.spiderfoot_wrapper import run_spiderfoot
+from tools.trufflehog_wrapper import run_trufflehog
 import re
 import os
 import random
@@ -181,7 +182,7 @@ async def start_scan_job(request: ScanRequest) -> int:
         if data_type in ["phone", "ic"]:  # Only run for phone or IC
             print("⚙️ Running Google Custom Search...")
             logging.info("Running Google Custom Search...") 
-
+            result = run_google_dork(request.search_data)
             try:
                 success = bool(result.get("success"))
                 hits = result.get("results", []) or []
@@ -214,17 +215,36 @@ async def start_scan_job(request: ScanRequest) -> int:
                 )
 
         # Simulate other tools 
-        for tool in ["trufflehog"]:
-            models.ScanResult.create(
-                job_id=scan_id,
-                tool_name=tool,
-                result={"mock": "Tool ran successfully"},
-                confidence=0.7,
-                severity="low",
-                result_type="url",
-                source_url=f"https://github.com/{tool}/{tool}"
+        # --- TruffleHog API Key Workflow ---
+        # --- TruffleHog GitHub Repo Workflow ---
+        if data_type == "github_repo":
+            logging.info("Running live TruffleHog Scan for GitHub repository...")
+            
+            # Call the actual wrapper function from your file
+            result = run_trufflehog(request.search_data)
+            logging.info(f"TruffleHog wrapper returned: success={result['success']}")
+
+            # Update the status of the tool based on the result
+            models.ToolStatus.update_status(
+                db, scan_id, "trufflehog",
+                "completed" if result["success"] else "failed",
+                result.get("error")
             )
-            models.ToolStatus.update_status(db, scan_id, tool, "completed")
+
+            # If the scan was successful and found something, create a result record.
+            # This now correctly checks for the "results" key from your wrapper.
+            if result["success"] and result.get("results"):
+                logging.info(f"TruffleHog found {len(result['results'])} findings. Saving to database.")
+                models.ScanResult.create(
+                    job_id=scan_id,
+                    tool_name="trufflehog",
+                    # This now correctly saves the data from the "results" key.
+                    result=result["results"], 
+                    confidence=0.95,
+                    severity="critical",
+                    result_type="json",
+                    source_url="https://github.com/trufflesecurity/trufflehog"
+                )
 
         logging.info(f"Finished all tool scans for Job ID: {scan_id}. Updating final status to 'completed'.")
         
