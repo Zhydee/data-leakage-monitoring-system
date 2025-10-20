@@ -1,10 +1,6 @@
-# --- START OF FILE app/models/models.py (Corrected) ---
-
 from app.database import Base
-# --- NEW IMPORTS ---
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, JSON
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, JSON, Boolean
 from sqlalchemy.orm import relationship # <-- IMPORT THIS
-# --- END NEW IMPORTS ---
 from datetime import datetime
 from app.database import SessionLocal
 
@@ -132,3 +128,64 @@ class ToolStatus(Base):
         except Exception as e:
             print("❌ ERROR in ToolStatus.update_status():", str(e))
             return False
+class MonitoredAsset(Base):
+    __tablename__ = "monitored_assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    data_type = Column(String, nullable=False)
+    search_data = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_scanned_at = Column(DateTime, nullable=True)
+    previous_results_hash = Column(String, nullable=True)
+
+    alerts = relationship("Alert", back_populates="asset", cascade="all, delete-orphan")
+    
+    @classmethod
+    def create(cls, user_id, data_type, search_data):
+        db = SessionLocal()
+        try:
+            asset = cls(
+                user_id=user_id,
+                data_type=data_type,
+                search_data=search_data
+            )
+            db.add(asset)
+            db.commit()
+            db.refresh(asset)
+            return asset
+        finally:
+            db.close()
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    asset_id = Column(Integer, ForeignKey("monitored_assets.id"), nullable=False)
+    
+    user_id = Column(String, nullable=False, index=True)
+    scan_id = Column(Integer, nullable=False)
+    message = Column(String, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    asset = relationship("MonitoredAsset", back_populates="alerts")
+    
+
+    @classmethod
+    def create(cls, asset_id, user_id, scan_id, message):
+        db = SessionLocal()
+        try:
+            alert = cls(
+                asset_id=asset_id,
+                user_id=user_id,
+                scan_id=scan_id,
+                message=message
+            )
+            db.add(alert)
+            db.commit()
+            db.refresh(alert)
+            return alert
+        finally:
+            db.close()

@@ -14,8 +14,13 @@ import plotly.express as px
 import pandas as pd
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
+from authlib.integrations.requests_client import OAuth2Session
+from authlib.jose import jwt
+import secrets # Used to generate a secure nonce
+import asyncio
 from dotenv import load_dotenv
 load_dotenv()
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Data Leakage Monitoring System",
@@ -23,6 +28,84 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"  # ENSURES SIDEBAR IS INITIALLY OPEN AND BUTTON IS ALWAYS FUNCTIONAL
 )
+# --- AUTH0 CONFIGURATION ---
+AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
+AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+# --- OAUTH SETUP ---
+session = OAuth2Session(
+    client_id=AUTH0_CLIENT_ID,
+    client_secret=AUTH0_CLIENT_SECRET,
+    scope='openid profile email',
+    redirect_uri="http://localhost:8501",
+)
+
+# --- FINAL, CORRECTED HELPER FUNCTIONS FOR AUTHENTICATION ---
+def get_authorization_url():
+    """Generates the Auth0 authorization URL."""
+    st.session_state['nonce'] = secrets.token_urlsafe(16)
+    
+    # THE FIX: Manually define the authorization endpoint URL
+    authorization_endpoint = f'https://{AUTH0_DOMAIN}/authorize'
+    
+    authorization_url, _ = session.create_authorization_url(
+        url=authorization_endpoint,
+        nonce=st.session_state['nonce']
+    )
+    return authorization_url
+
+def get_user_info(code):
+    """Exchanges the authorization code for an access token and decodes the ID token using the public JWKS."""
+    token_endpoint = f'https://{AUTH0_DOMAIN}/oauth/token'
+    
+    # Fetch the full token response
+    token = session.fetch_token(
+        url=token_endpoint,
+        code=code,
+        authorization_response=st.session_state.get('auth_response', '') 
+    )
+    
+    jwks_uri = f'https://{AUTH0_DOMAIN}/.well-known/jwks.json'
+    
+    # 2. Fetch the JSON Web Key Set (JWKS)
+    jwks = requests.get(jwks_uri).json()
+    
+    user_info = jwt.decode(
+        token['id_token'],
+        key=jwks
+    )
+    
+    user_info.validate()
+
+    return user_info
+
+def display_login_prompt():
+    """Shows a message and a sign-in button for protected pages."""
+    st.warning("🔒 This feature is for signed-in users only.")
+    st.markdown("Please sign in to view your personalized dashboard and reports.")
+    
+    auth_url = get_authorization_url()
+    st.link_button("Sign in / Register", auth_url, use_container_width=True)
+
+def handle_auth_redirect():
+    """Checks for the auth code in URL params and logs the user in."""
+    query_params = st.query_params
+    auth_code = query_params.get("code")
+    
+    if auth_code:
+        st.session_state['auth_response'] = f"http://localhost:8501/?code={auth_code}"
+
+    if auth_code and 'user' not in st.session_state:
+        try:
+            user_info = get_user_info(auth_code)
+            st.session_state['user'] = user_info
+            st.query_params.clear() 
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error during login: {e}")
+            st.error("Please try signing in again.")
+
+# --- PDF Fixes ---
 def pdf_to_bytes(pdf) -> bytes:
     """
     Works with both FPDF 1.x and fpdf2 2.x.
@@ -652,9 +735,38 @@ try:
     requests.get("http://localhost:8000/health", timeout=2)
 except Exception:
     pass # Keep it silent
-# --- SIDEBAR NAVIGATION ---
+
+# --- NEW: UNIFIED APP STRUCTURE ---
+
+# --- 1. AUTHENTICATION HANDLING AT THE TOP ---
+# This runs on every page load to catch the redirect from Auth0
+handle_auth_redirect()
+
+# --- 2. DEFINE PUBLIC AND PRIVATE PAGES ---
+PUBLIC_PAGES = ["Homepage", "Scanner", "Scan History", "About Tools", "FAQ"]
+PRIVATE_PAGES = ["Dashboard", "Reports"]
+
+# --- 3. SETUP SIDEBAR AND NAVIGATION (ALWAYS VISIBLE) ---
 with st.sidebar:
+    # --- DYNAMICALLY DISPLAY USER INFO OR LOGIN PROMPT ---
+    if 'user' in st.session_state:
+        user = st.session_state['user']
+        st.header(f"Welcome, {user.get('name', 'User').split()[0]}!")
+        st.write(f"Logged in as: {user.get('email')}")
+        
+        if st.button("Logout"):
+            del st.session_state['user']
+            st.rerun()
+    else:
+        st.header("Welcome, Guest!")
+        st.markdown("Sign in to access your personalized dashboard and reports.")
+        auth_url = get_authorization_url()
+        st.link_button("Sign in / Register", auth_url, use_container_width=True)
+
+    st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown("<h1 style='color:#2c3e50; text-align:center; font-size: 1.5rem;'>MENU</h1>", unsafe_allow_html=True)
+    
+    # --- NAVIGATION MENU ---
     selected = option_menu(
         menu_title=None,
         options=["Homepage", "Scanner", "Dashboard", "Scan History", "About Tools", "Reports", "FAQ"],
@@ -670,927 +782,951 @@ with st.sidebar:
             "nav-link-selected": {"background-color": "#f39c12", "color": "#FFFFFF", "font-weight": "bold"},
         }
     )
-# --- PAGE ROUTING ---
-if selected == "Scanner":
-    st.header("🔍 Data Leakage Scanner")
-    st.markdown("Select a data type and provide the information to scan across all integrated OSINT platforms.")
 
-    with st.container(border=True):
-        col1, col2 = st.columns([1, 2], gap="large")
+# --- 4. PAGE ROUTING AND CONTENT RENDERING ---
 
-        # --- Column 1: The controlling widget, placed OUTSIDE the form ---
-        with col1:
-            st.subheader("1. Select Data Type")
-            data_type = st.selectbox(
-                label="Choose the type of data to scan for:",
-                options=list(backend_data_type_map.keys()),
-                label_visibility="collapsed",
-                help="Select the type of data you want to scan for leaks."
-            )
+# --- Check if the selected page is private and if the user is logged out ---
+is_private_page = selected in PRIVATE_PAGES
+is_logged_in = 'user' in st.session_state
 
-        # --- Column 2: The entire form is placed here ---
-        with col2:
-            # The form starts here, encapsulating everything that needs to be submitted
-            with st.form(key="scan_form"):
-                help_messages = {
-                    "Email Address": "Check if your email has been leaked in public data breaches.",
-                    "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
-                    "Phone Number": "Find out if your phone number is exposed in public sources.",
-                    "Username": "Scan the internet for social media and forum accounts matching a username.",
-                    "Domain Name": "Discover if a domain has been associated with leaked data.",
-                    "IP Address": "Check if an IP address is publicly exposed or mentioned.",
-                    "IC Number": "Monitor Malaysian IC number exposure.",
-                    "GitHub Repository": "Scan an entire public GitHub repository for any exposed secrets.",
-                }
-                
-                placeholder_examples = {
-                    "Email Address": "e.g., user@example.com",
-                    "Password": "Enter a password to check its exposure",
-                    "Phone Number": "e.g., 012-3456789 or +60123456789",
-                    "Username": "e.g., testuser123",
-                    "Domain Name": "e.g., example.com",
-                    "IP Address": "e.g., 8.8.8.8",
-                    "IC Number": "e.g., 990101-14-1234",
-                    "GitHub Repository": "e.g., https://github.com/user/repository",
-                }
+if is_private_page and not is_logged_in:
+    # If a non-logged-in user tries to access a private page, show the login prompt
+    st.header(f"🔒 Access Denied: {selected}")
+    display_login_prompt()
 
-                # The input widget is now correctly inside the form
-                if data_type == "Password":
-                    search_data = st.text_input(
-                        label="2. Provide Input Data",
-                        type="password",
-                        placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
-                        help=help_messages.get(data_type)
-                    )
-                else:
-                    search_data = st.text_input(
-                        label="2. Provide Input Data",
-                        placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
-                        help=help_messages.get(data_type)
-                    )
+else:
+    # --- Render the selected page (either public, or private for a logged-in user) ---
+    if selected == "Scanner":
+        st.header("🔍 Data Leakage Scanner")
+        st.markdown("Select a data type and provide the information to scan across all integrated OSINT platforms.")
 
-                st.markdown("<hr style='border: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
-                
-                # The submit button is also inside the form
-                scan_button = st.form_submit_button("🚀 Start Comprehensive Scan", use_container_width=True)
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 2], gap="large")
 
-    # --- The submission logic block is OUTSIDE all layout elements ---
-    # This part remains unchanged and will now work correctly.
-    if scan_button:
-        if search_data:
-            regex_patterns = {
-                "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
-                "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-                "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-                "IC Number": r"^\d{6}-\d{2}-\d{4}$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
-            }
-            backend_data_type = backend_data_type_map[data_type]
-            pattern = regex_patterns[data_type]
-            if not re.search(pattern, search_data.strip()):
-                st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
-            else:
-                st.success("✅ Input validated. Initiating scan...", icon="👍")
-                with st.spinner("🚀 Scanning... This may take a few minutes for public scans."):
-                    payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
-                    try:
-                        response = requests.post("http://localhost:8000/scan/start", json=payload)
-                        if response.status_code == 200:
-                            result = response.json()
-                            st.success(f"🎉 Scan started successfully! Job ID: `{result['job_id']}`", icon="✅")
-                            st.info("📊 Results will appear in 'Scan History' shortly.", icon="ℹ️")
-                        else:
-                            st.error(f"❌ Scan failed: {response.status_code} - {response.text}", icon="🔥")
-                    except Exception as e:
-                        st.error(f"❌ Error initiating scan: {str(e)}", icon="🔥")
-        else:
-            st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
-
-# --- NEW: SECURITY DASHBOARD PAGE ---
-elif selected == "Dashboard":
-    st.header("📈 Security Dashboard")
-    st.markdown("A high-level, aggregated, and visual overview of your overall security risk based on all historical scans.")
-
-    try:
-        res = requests.get("http://localhost:8000/scan-history")
-        if res.status_code != 200:
-            st.error(f"Failed to fetch scan data: Status code {res.status_code}")
-        else:
-            scans = res.json()
-            if not scans:
-                st.info("No scan history found. Run a scan from the 'Scanner' page to build your dashboard.", icon="ℹ️")
-            else:
-                # --- A. EXECUTIVE SUMMARY DASHBOARD ---
-                st.subheader("Executive Summary")
-
-                # --- 1. Calculate KPIs ---
-                total_scans = len(scans)
-                all_findings = []
-                leaks_by_type = {}
-
-                for scan in scans:
-                    severity = calculate_overall_severity(scan['data_type'], scan.get('results', {}))
-                    if severity:
-                        display_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
-                        all_findings.append({
-                            "severity": severity,
-                            "data_type": display_type,
-                            "search_data": scan['search_data'],
-                            "timestamp": datetime.fromisoformat(scan["timestamp"])
-                        })
-                        leaks_by_type[display_type] = leaks_by_type.get(display_type, 0) + 1
-
-                total_leaks = len(all_findings)
-
-                # --- 2. Display Key Metrics (KPIs) ---
-                kpi_cols = st.columns(3)
-                kpi_cols[0].metric(label="Total Scans Performed", value=total_scans)
-                kpi_cols[1].metric(label="Total Leaks Found", value=total_leaks)
-                critical_leaks = sum(1 for f in all_findings if f['severity'] == 'CRITICAL')
-                kpi_cols[2].metric(label="Critical Leaks", value=critical_leaks, delta_color="inverse")
-
-                st.markdown("---")
-
-                # --- 3. Create Charts ---
-                chart_cols = st.columns(2)
-                
-                # Pie Chart: Leaks by Severity
-                with chart_cols[0]:
-                    st.markdown("<h5>Leaks by Severity</h5>", unsafe_allow_html=True)
-                    if all_findings:
-                        severity_counts = pd.DataFrame(all_findings)['severity'].value_counts().reset_index()
-                        severity_counts.columns = ['severity', 'count']
-                        
-                        # Define a color map for consistent styling
-                        color_map = {'CRITICAL': '#8B0000', 'HIGH': '#c62828', 'MEDIUM': '#f9a825', 'LOW': '#2e7d32'}
-
-                        fig_pie = px.pie(severity_counts, 
-                                     names='severity', 
-                                     values='count',
-                                     color='severity',
-                                     color_discrete_map=color_map,
-                                     hole=.3)
-                        fig_pie.update_layout(margin=dict(l=0, r=0, t=20, b=20), legend_title_text='Severity')
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                    else:
-                        st.info("No leaks found to display severity distribution.")
-
-                # Bar Chart: Leaks by Type
-                with chart_cols[1]:
-                    st.markdown("<h5>Leaks by Data Type</h5>", unsafe_allow_html=True)
-                    if leaks_by_type:
-                        type_df = pd.DataFrame(list(leaks_by_type.items()), columns=['Data Type', 'Count']).sort_values('Count', ascending=False)
-                        fig_bar = px.bar(type_df, 
-                                     x='Data Type', 
-                                     y='Count',
-                                     text='Count',
-                                     color_discrete_sequence=['#f39c12'])
-                        fig_bar.update_traces(textposition='outside')
-                        fig_bar.update_layout(margin=dict(l=0, r=0, t=20, b=20), yaxis_title=None, xaxis_title=None)
-                        st.plotly_chart(fig_bar, use_container_width=True)
-                    else:
-                        st.info("No leaks found to display by data type.")
-                
-                st.markdown("---")
-
-                # --- 4. Most Recent Critical Findings Table ---
-                st.subheader("Recent High-Priority Findings")
-                critical_high_findings = sorted(
-                    [f for f in all_findings if f['severity'] in ['CRITICAL', 'HIGH']],
-                    key=lambda x: x['timestamp'],
-                    reverse=True
+            # --- Column 1: The controlling widget, placed OUTSIDE the form ---
+            with col1:
+                st.subheader("1. Select Data Type")
+                data_type = st.selectbox(
+                    label="Choose the type of data to scan for:",
+                    options=list(backend_data_type_map.keys()),
+                    label_visibility="collapsed",
+                    help="Select the type of data you want to scan for leaks."
                 )
 
-                if not critical_high_findings:
-                    st.success("✅ No recent 'Critical' or 'High' severity leaks found. Keep up the great work!", icon="🛡️")
+            # --- Column 2: The entire form is placed here ---
+            with col2:
+                # The form starts here, encapsulating everything that needs to be submitted
+                with st.form(key="scan_form"):
+                    help_messages = {
+                        "Email Address": "Check if your email has been leaked in public data breaches.",
+                        "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
+                        "Phone Number": "Find out if your phone number is exposed in public sources.",
+                        "Username": "Scan the internet for social media and forum accounts matching a username.",
+                        "Domain Name": "Discover if a domain has been associated with leaked data.",
+                        "IP Address": "Check if an IP address is publicly exposed or mentioned.",
+                        "IC Number": "Monitor Malaysian IC number exposure.",
+                        "GitHub Repository": "Scan an entire public GitHub repository for any exposed secrets.",
+                    }
+                    
+                    placeholder_examples = {
+                        "Email Address": "e.g., user@example.com",
+                        "Password": "Enter a password to check its exposure",
+                        "Phone Number": "e.g., 012-3456789 or +60123456789",
+                        "Username": "e.g., testuser123",
+                        "Domain Name": "e.g., example.com",
+                        "IP Address": "e.g., 8.8.8.8",
+                        "IC Number": "e.g., 990101-14-1234",
+                        "GitHub Repository": "e.g., https://github.com/user/repository",
+                    }
+
+                    # The input widget is now correctly inside the form
+                    if data_type == "Password":
+                        search_data = st.text_input(
+                            label="2. Provide Input Data",
+                            type="password",
+                            placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
+                            help=help_messages.get(data_type)
+                        )
+                    else:
+                        search_data = st.text_input(
+                            label="2. Provide Input Data",
+                            placeholder=placeholder_examples.get(data_type, "Enter data to search..."),
+                            help=help_messages.get(data_type)
+                        )
+
+                    st.markdown("<hr style='border: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
+                    
+                    # The submit button is also inside the form
+                    scan_button = st.form_submit_button("🚀 Start Comprehensive Scan", use_container_width=True)
+
+        # --- The submission logic block is OUTSIDE all layout elements ---
+        # This part remains unchanged and will now work correctly.
+        if scan_button:
+            if search_data:
+                regex_patterns = {
+                    "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                    "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
+                    "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                    "IC Number": r"^\d{6}-\d{2}-\d{4}$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
+                }
+                backend_data_type = backend_data_type_map[data_type]
+                pattern = regex_patterns[data_type]
+                if not re.search(pattern, search_data.strip()):
+                    st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
                 else:
-                    display_findings = []
-                    for f in critical_high_findings[:5]: # Display top 5
-                        display_findings.append({
-                            "Severity": f['severity'],
-                            "Data Type": f['data_type'],
-                            "Leaked Data": f['search_data'],
-                            "Date Found": f['timestamp'].strftime("%d %b %Y, %I:%M %p")
-                        })
-                    
-                    df_display = pd.DataFrame(display_findings)
-
-                    # Custom styling for the severity column
-                    def style_severity(val):
-                        color = {'CRITICAL': '#c62828', 'HIGH': '#e67e22'}.get(val, 'black')
-                        return f'color: {color}; font-weight: bold;'
-
-                    st.dataframe(
-                        df_display.style.map(style_severity, subset=['Severity']),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-    except Exception as e:
-        st.error(f"❌ An error occurred while building the dashboard: {e}", icon="🔥")
-
-# --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
-elif selected == "Scan History":
-    st.header("📊 Scan History")
-    st.markdown("Review the enriched findings from your recent scans. Results from multiple tools are combined for better insights.")
-    
-    try:
-        res = requests.get("http://localhost:8000/scan-history")
-        if res.status_code == 200:
-            scans = res.json()
-            if not scans:
-                st.info("No scan history found. Run a scan from the 'Scanner' page to see results here.", icon="ℹ️")
-
-            for scan in scans:
-                display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
-                expander_title = f"Scan ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
-                
-                with st.expander(expander_title, expanded=False):
-                    # --- Timestamp and Status ---
-                    dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
-                    try:
-                        locale.setlocale(locale.LC_TIME, "en_US.utf8")
-                    except locale.Error:
-                        locale.setlocale(locale.LC_TIME, "")
-                    formatted_date = dt.strftime("%d %B %Y, %I:%M %p")
-                    
-                    results = scan.get("results", {})
-                    severity = calculate_overall_severity(scan['data_type'], results)
-
-                    # --- NEW: Create a compact summary bar with columns ---
-                    col1, col2 = st.columns([3, 1])
-
-                    with col1:
-                        st.markdown(f"**🕒 Timestamp:** {formatted_date} | **Status:** `{scan['status']}`")
-                        if severity:
-                            st.markdown(f"**Overall Severity:** {render_severity_badge(severity)}", unsafe_allow_html=True)
-
-                    with col2:
+                    st.success("✅ Input validated. Initiating scan...", icon="👍")
+                    with st.spinner("🚀 Scanning... This may take a few minutes for public scans."):
+                        payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
                         try:
-                            # Attempt to generate the PDF data as before
-                            pdf_data = generate_scan_report_pdf(scan, display_name_map)
-                            fname = f"Leakage_Report_{scan['scan_id']}_{safe_filename(scan['search_data'])}.pdf"
-                            
-                            # Display the download button
-                            st.download_button(
-                                label="📥 Download Report (PDF)",
-                                data=pdf_data,
-                                file_name=fname,
-                                mime="application/pdf",
-                            )
-                        except TypeError as e:
-                            # --- THIS IS THE NEW, DETAILED LOGGING BLOCK ---
-                            if "unhashable type: 'slice'" in str(e):
-                                st.error("Caught the specific 'unhashable type: slice' PDF error. Please provide the details below for a final fix.", icon="🚨")
-                                
-                                # Create a detailed error report
-                                error_details = {
-                                    "error_message": str(e),
-                                    "error_type": type(e).__name__,
-                                    "traceback": traceback.format_exc(),
-                                    "problematic_scan_object": scan  # This is the crucial part
-                                }
-                                
-                                # Display the detailed report in the Streamlit app
-                                with st.expander("Click to view detailed error log"):
-                                    # Use json.dumps for a clean, readable print of the dictionary
-                                    st.code(json.dumps(error_details, indent=2), language="json")
+                            response = requests.post("http://localhost:8000/scan/start", json=payload)
+                            if response.status_code == 200:
+                                result = response.json()
+                                st.success(f"🎉 Scan started successfully! Job ID: `{result['job_id']}`", icon="✅")
+                                st.info("📊 Results will appear in 'Scan History' shortly.", icon="ℹ️")
                             else:
-                                # For any other TypeError, show a generic message
-                                st.error(f"PDF Generation Error: {e}", icon="🚨")
+                                st.error(f"❌ Scan failed: {response.status_code} - {response.text}", icon="🔥")
                         except Exception as e:
-                            # For any other general exception
-                            st.error(f"An unexpected PDF error occurred: {e}", icon="🚨")# Shortened error for compact layout
+                            st.error(f"❌ Error initiating scan: {str(e)}", icon="🔥")
+            else:
+                st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
+
+    # --- NEW: SECURITY DASHBOARD PAGE ---
+    elif selected == "Dashboard":
+        st.header("📈 Security Dashboard")
+        st.markdown("A high-level, aggregated, and visual overview of your overall security risk based on all historical scans.")
+
+        try:
+            res = requests.get("http://localhost:8000/scan-history")
+            if res.status_code != 200:
+                st.error(f"Failed to fetch scan data: Status code {res.status_code}")
+            else:
+                scans = res.json()
+                if not scans:
+                    st.info("No scan history found. Run a scan from the 'Scanner' page to build your dashboard.", icon="ℹ️")
+                else:
+                    # --- A. EXECUTIVE SUMMARY DASHBOARD ---
+                    st.subheader("Executive Summary")
+
+                    # --- 1. Calculate KPIs ---
+                    total_scans = len(scans)
+                    all_findings = []
+                    leaks_by_type = {}
+
+                    for scan in scans:
+                        severity = calculate_overall_severity(scan['data_type'], scan.get('results', {}))
+                        if severity:
+                            display_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
+                            all_findings.append({
+                                "severity": severity,
+                                "data_type": display_type,
+                                "search_data": scan['search_data'],
+                                "timestamp": datetime.fromisoformat(scan["timestamp"])
+                            })
+                            leaks_by_type[display_type] = leaks_by_type.get(display_type, 0) + 1
+
+                    total_leaks = len(all_findings)
+
+                    # --- 2. Display Key Metrics (KPIs) ---
+                    kpi_cols = st.columns(3)
+                    kpi_cols[0].metric(label="Total Scans Performed", value=total_scans)
+                    kpi_cols[1].metric(label="Total Leaks Found", value=total_leaks)
+                    critical_leaks = sum(1 for f in all_findings if f['severity'] == 'CRITICAL')
+                    kpi_cols[2].metric(label="Critical Leaks", value=critical_leaks, delta_color="inverse")
+
+                    st.markdown("---")
+
+                    # --- 3. Create Charts ---
+                    chart_cols = st.columns(2)
+                    
+                    # Pie Chart: Leaks by Severity
+                    with chart_cols[0]:
+                        st.markdown("<h5>Leaks by Severity</h5>", unsafe_allow_html=True)
+                        if all_findings:
+                            severity_counts = pd.DataFrame(all_findings)['severity'].value_counts().reset_index()
+                            severity_counts.columns = ['severity', 'count']
+                            
+                            # Define a color map for consistent styling
+                            color_map = {'CRITICAL': '#8B0000', 'HIGH': '#c62828', 'MEDIUM': '#f9a825', 'LOW': '#2e7d32'}
+
+                            fig_pie = px.pie(severity_counts, 
+                                        names='severity', 
+                                        values='count',
+                                        color='severity',
+                                        color_discrete_map=color_map,
+                                        hole=.3)
+                            fig_pie.update_layout(margin=dict(l=0, r=0, t=20, b=20), legend_title_text='Severity')
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                        else:
+                            st.info("No leaks found to display severity distribution.")
+
+                    # Bar Chart: Leaks by Type
+                    with chart_cols[1]:
+                        st.markdown("<h5>Leaks by Data Type</h5>", unsafe_allow_html=True)
+                        if leaks_by_type:
+                            type_df = pd.DataFrame(list(leaks_by_type.items()), columns=['Data Type', 'Count']).sort_values('Count', ascending=False)
+                            fig_bar = px.bar(type_df, 
+                                        x='Data Type', 
+                                        y='Count',
+                                        text='Count',
+                                        color_discrete_sequence=['#f39c12'])
+                            fig_bar.update_traces(textposition='outside')
+                            fig_bar.update_layout(margin=dict(l=0, r=0, t=20, b=20), yaxis_title=None, xaxis_title=None)
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                        else:
+                            st.info("No leaks found to display by data type.")
                     
                     st.markdown("---")
 
+                    # --- 4. Most Recent Critical Findings Table ---
+                    st.subheader("Recent High-Priority Findings")
+                    critical_high_findings = sorted(
+                        [f for f in all_findings if f['severity'] in ['CRITICAL', 'HIGH']],
+                        key=lambda x: x['timestamp'],
+                        reverse=True
+                    )
+
+                    if not critical_high_findings:
+                        st.success("✅ No recent 'Critical' or 'High' severity leaks found. Keep up the great work!", icon="🛡️")
+                    else:
+                        display_findings = []
+                        for f in critical_high_findings[:5]: # Display top 5
+                            display_findings.append({
+                                "Severity": f['severity'],
+                                "Data Type": f['data_type'],
+                                "Leaked Data": f['search_data'],
+                                "Date Found": f['timestamp'].strftime("%d %b %Y, %I:%M %p")
+                            })
+                        
+                        df_display = pd.DataFrame(display_findings)
+
+                        # Custom styling for the severity column
+                        def style_severity(val):
+                            color = {'CRITICAL': '#c62828', 'HIGH': '#e67e22'}.get(val, 'black')
+                            return f'color: {color}; font-weight: bold;'
+
+                        st.dataframe(
+                            df_display.style.map(style_severity, subset=['Severity']),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+        except Exception as e:
+            st.error(f"❌ An error occurred while building the dashboard: {e}", icon="🔥")
+
+    # --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
+    elif selected == "Scan History":
+        st.header("📊 Scan History")
+        st.markdown("Review the enriched findings from your recent scans. Results from multiple tools are combined for better insights.")
+        
+        try:
+            res = requests.get("http://localhost:8000/scan-history")
+            if res.status_code == 200:
+                scans = res.json()
+                if not scans:
+                    st.info("No scan history found. Run a scan from the 'Scanner' page to see results here.", icon="ℹ️")
+
+                for scan in scans:
+                    display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
+                    expander_title = f"Scan ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
                     
-
-                    # --- ENRICHED/CONSOLIDATED VIEWS ---
-
-                    # 1. ENRICHED USERNAME VIEW
-                    if scan['data_type'] == 'username':
-                        st.markdown("### 🕵️ Username Footprint Analysis")
+                    with st.expander(expander_title, expanded=False):
+                        # --- Timestamp and Status ---
+                        dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
+                        try:
+                            locale.setlocale(locale.LC_TIME, "en_US.utf8")
+                        except locale.Error:
+                            locale.setlocale(locale.LC_TIME, "")
+                        formatted_date = dt.strftime("%d %B %Y, %I:%M %p")
                         
-                        sherlock_result = results.get('sherlock')
-                        
-                        st.subheader("Social Media Presence (from Sherlock)")
-                        if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list):
-                            sherlock_data = sherlock_result["data"]
-                            if not sherlock_data:
-                                st.success("✅ No public social profiles found by Sherlock.")
-                            else:
-                                st.metric(label="Public Profiles Found", value=len(sherlock_data))
-                                st.warning("Found Public Social Profile(s)", icon="🕵️")
-                                for url in sherlock_data:
-                                    ext = tldextract.extract(url)
-                                    platform = ext.domain.capitalize()
-                                    st.markdown(f"🔗 **{platform}:** [{url}]({url})")
-                                # --- CONTEXTUAL RISK ANALYSIS ---
-                                st.markdown("---")
-                                st.error("🚨 What is the Risk?", icon="🤔")
-                                st.markdown("""
-                                Even though these are public profiles, they create a 'digital footprint'. Attackers can combine information from different accounts (like your interests, location, friends, and workplace) to build a detailed profile of you. This information can be used for:
-                                - **Targeted Phishing:** Creating very convincing scam emails or messages that you are more likely to fall for.
-                                - **Identity Theft:** Answering 'security questions' to try and access your more sensitive accounts.
-                                - **Social Engineering:** Tricking you or your friends into revealing more information.
-                                """)
+                        results = scan.get("results", {})
+                        severity = calculate_overall_severity(scan['data_type'], results)
 
-                                st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                                st.markdown("""
-                                1.  **Review Each Profile:** Click on the links above and check what information is publicly visible.
-                                2.  **Remove Sensitive Details:** Take down any personal data you don't want strangers to know, like your full date of birth, phone number, home address, or specific location check-ins.
-                                3.  **Tighten Privacy Settings:** Go into the settings of each platform and limit who can see your posts, photos, and personal information. Change settings from "Public" to "Friends Only" or "Private".
-                                """)
-                        else:
-                            st.info("No Sherlock results available for this scan.")
+                        # --- NEW: Create a compact summary bar with columns ---
+                        col1, col2 = st.columns([3, 1])
 
+                        with col1:
+                            st.markdown(f"**🕒 Timestamp:** {formatted_date} | **Status:** `{scan['status']}`")
+                            if severity:
+                                st.markdown(f"**Overall Severity:** {render_severity_badge(severity)}", unsafe_allow_html=True)
 
-                    # 2. ENRICHED EMAIL VIEW
-                    elif scan['data_type'] == 'email':
-                        st.markdown("### 📧 Email Exposure Analysis")
-                        
-                        hibp_result = results.get('hibp_emails')
-
-                        st.subheader("Data Breach Exposure (from HIBP)")
-                        if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list):
-                            hibp_data = hibp_result["data"]
-                            if not hibp_data:
-                                st.success("✅ No public breaches found for this email by HIBP.")
-                            else:
-                                st.metric(label="Breaches Found", value=len(hibp_data), delta_color="inverse")
-                                st.error("🚨 Found in Public Data Breach", icon="🔥")
+                        with col2:
+                            try:
+                                # Attempt to generate the PDF data as before
+                                pdf_data = generate_scan_report_pdf(scan, display_name_map)
+                                fname = f"Leakage_Report_{scan['scan_id']}_{safe_filename(scan['search_data'])}.pdf"
                                 
-                                for breach in hibp_data:
-                                    with st.container(border=True):
-                                        st.subheader(breach.get("Name", "Unknown Breach"))
-                                        tags_html = "".join([f"<span style='background-color:#ffebee; color:#c62828; padding: 3px 8px; border-radius:12px; margin-right:5px; font-size:0.85rem;'>{item}</span>" for item in breach.get("DataClasses", [])])
-                                        st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
-
-                                # --- CONTEXTUAL RISK ANALYSIS ---
-                                st.markdown("---")
-                                st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
-                                st.markdown("""
-                                This is a **CRITICAL** risk. Your email and other personal details from these breaches are likely available to hackers. They can use this information to:
-                                - **Take Over Your Accounts:** If you reused the password from a breached site, they can access your other accounts (email, banking, social media).
-                                - **Send Targeted Phishing Scams:** They can create very believable scam emails that appear to come from the breached company to trick you into giving away more information.
-                                - **Commit Identity Theft:** With enough personal data, criminals can try to open new accounts or commit fraud in your name.
-                                """)
-
-                                st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                                st.markdown("""
-                                **Follow these steps immediately:**
-                                1.  **Change Your Passwords:** Go to the websites listed in the breaches above and change your password right away.
-                                2.  **Change Passwords Everywhere Else:** If you used the same (or a similar) password on other websites, change them too. Hackers will try the leaked password on hundreds of other popular sites.
-                                3.  **Enable Two-Factor Authentication (2FA):** This is your best defense. Turn on 2FA for all your important accounts (especially email). This means that even if a hacker has your password, they can't log in without a code from your phone.
-                                4.  **Be Vigilant:** Be extra suspicious of any unexpected emails, especially those that ask you to click links or download attachments.
-                                """)
-                        else:
-                            st.info("No HIBP results available for this scan.")
-                                            
-
-                    # 2.5 (NEW) ENRICHED DOMAIN VIEW
-                    elif scan['data_type'] == 'domain':
-                        st.markdown("### 📈 Domain Intelligence Report")
-                        st.markdown("This report shows the public information available about your domain, including its ownership records and technical connections to the internet.")
-
-                        spiderfoot_result = results.get('spiderfoot')
-
-                        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                            spiderfoot_data = spiderfoot_result["data"]
-                            
-                            whois_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_whois']
-                            if whois_results:
-                                with st.container(border=True):
-                                    st.markdown("<h5>📝 Ownership & Registration Details (WHOIS)</h5>", unsafe_allow_html=True)
-                                    st.info("**What is this?** This is the official public record of who owns this domain, like a deed for a house.", icon="💡")
-
-                                    raw_whois = whois_results[0].get('data', '')
+                                # Display the download button
+                                st.download_button(
+                                    label="📥 Download Report (PDF)",
+                                    data=pdf_data,
+                                    file_name=fname,
+                                    mime="application/pdf",
+                                )
+                            except TypeError as e:
+                                # --- THIS IS THE NEW, DETAILED LOGGING BLOCK ---
+                                if "unhashable type: 'slice'" in str(e):
+                                    st.error("Caught the specific 'unhashable type: slice' PDF error. Please provide the details below for a final fix.", icon="🚨")
                                     
-                                    st.markdown("---")
-                                    st.subheader("Key Information")
-                                    col1, col2, col3 = st.columns(3)
-                                    with col1:
-                                        registrar = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Registrar:' in line), 'N/A')
-                                        st.metric(label="✅ Official Provider (Registrar)", value=registrar)
-                                    with col2:
-                                        creation_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Creation Date:' in line), 'N/A')
-                                        st.metric(label="📅 Registered On", value=creation_date_str.split('T')[0] if 'T' in creation_date_str else creation_date_str)
-                                    with col3:
-                                        expiry_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Expiry Date:' in line), 'N/A')
-                                        st.metric(label="⏳ Expires On", value=expiry_date_str.split('T')[0] if 'T' in expiry_date_str else expiry_date_str)
-                                    st.markdown("---")
+                                    # Create a detailed error report
+                                    error_details = {
+                                        "error_message": str(e),
+                                        "error_type": type(e).__name__,
+                                        "traceback": traceback.format_exc(),
+                                        "problematic_scan_object": scan  # This is the crucial part
+                                    }
                                     
-                                    st.subheader("Why This Matters & Recommendations")
-                                    
-                                    if "REDACTED" in raw_whois or "Privacy" in raw_whois:
-                                        st.success("""
-                                            **✅ Good News: Your personal contact information appears to be private.**
-                                            The record shows that details like your name, address, and email are hidden. This is excellent for security, as it prevents spammers and scammers from harvesting your personal data from this public record.
-                                        """, icon="🛡️")
-                                    else:
-                                        st.error("""
-                                            **⚠️ High-Risk Alert: Your Personal Information is Public.**
-                                            The ownership record for this domain appears to contain public contact details (name, address, email). This is a significant privacy risk.
-                                            **💡 Recommendation:** Contact your domain provider (the 'Registrar' listed above) and ask to enable **"WHOIS Privacy"** or **"Domain Privacy Protection."** Most providers offer this service for free or a small fee to hide your personal details.
-                                        """, icon="🔥")
-
-                                    with st.expander("View the full raw technical record"):
-                                        st.code(raw_whois, language="text")
-
-                            dns_results = [r for r in spiderfoot_data if r.get('module') in ['sfp_dns', 'sfp_dnsresolve']]
-                            if dns_results:
-                                with st.container(border=True):
-                                    st.markdown("<h5>📡 Website & Email Server Connections (DNS)</h5>", unsafe_allow_html=True)
-                                    st.info("**What is this?** These are the technical records that act like the internet's phonebook. They tell browsers where to find your website and email servers.", icon="💡")
-                                    
-                                    st.markdown("---")
-                                    st.subheader("Key Connections")
-
-                                    primary_ip = None
-                                    ipv4_candidate = None
-                                    ipv6_candidate = None
-                                    fallback_candidate = None
-
-                                    for item in dns_results:
-                                        item_type = item.get('type', '').upper()
-                                        item_data = item.get('data', '')
-                                        item_source = item.get('source', '')
-
-                                        if item_type == 'IP_ADDRESS':
-                                            ipv4_candidate = item_data
-                                            break
-
-                                        if item_type == 'IPV6_ADDRESS' and not ipv6_candidate:
-                                            ipv6_candidate = item_data
-                                        
-                                        if item_data == scan['search_data']:
-                                            if '.' in item_source or ':' in item_source:
-                                                if not fallback_candidate:
-                                                    fallback_candidate = item_source
-
-                                    primary_ip = ipv4_candidate or ipv6_candidate or fallback_candidate
-
-                                    if primary_ip:
-                                        st.metric(label="🌐 Website's Digital Address (IP)", value=primary_ip)
-                                        st.markdown(f"This is the unique address of the server hosting your website. When someone types `{scan['search_data']}` into a browser, DNS tells it to go to `{primary_ip}`.")
-                                    else:
-                                        st.markdown("No primary website address (IP Address) was found in this scan.")
-
-                                    st.markdown("---")
-                                    st.subheader("Why This Matters")
-                                    st.markdown("""
-                                    These records are essential for your online presence to function. If they are incorrect, your website or email service could go offline. While they don't typically contain sensitive personal data themselves, they confirm that your domain is actively connected to the internet.
-                                    **💡 Recommendation:** No action is typically needed here unless you are experiencing technical issues with your website or email. This information is mainly for verification and technical troubleshooting.
-                                    """)
-
-                                    with st.expander("View all technical DNS records"):
-                                        for item in dns_results:
-                                            readable_type = item.get('type', 'N/A').replace('_', ' ').title()
-                                            st.markdown(f"**{readable_type}:** `{item.get('data', 'N/A')}`")
-
-                        else:
-                            st.info("No SpiderFoot results available for this scan.")
-
-                    # 2.6 (NEW) ENRICHED IP ADDRESS VIEW
-                    elif scan['data_type'] == 'ip':
-                        st.markdown("### 📈 IP Address Intelligence Report")
-                        st.markdown("This report shows public information about this IP address, including associated hostnames, open services, and its reputation.")
-
-                        spiderfoot_result = results.get('spiderfoot')
-
-                        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                            spiderfoot_data = spiderfoot_result["data"]
-                            
-                            vt_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_virustotal']
-                            hostname_results = [r for r in spiderfoot_data if r.get('type', '').upper() == 'INTERNET_NAME']
-
-                            with st.container(border=True):
-                                st.markdown("<h5>📝 Reputation & Associated Hostnames</h5>", unsafe_allow_html=True)
-                                
-                                if vt_results:
-                                    detections = vt_results[0].get('data', '0/0').split('/')[0]
-                                    if detections == "0":
-                                        st.success("**✅ Reputation Clean:** This IP was not found in any security blacklists on VirusTotal.", icon="🛡️")
-                                    else:
-                                        st.error(f"**🔥 Malicious Reputation:** This IP was flagged by **{detections}** security vendors on VirusTotal as potentially malicious.", icon="🚨")
+                                    # Display the detailed report in the Streamlit app
+                                    with st.expander("Click to view detailed error log"):
+                                        # Use json.dumps for a clean, readable print of the dictionary
+                                        st.code(json.dumps(error_details, indent=2), language="json")
                                 else:
-                                    st.info("Reputation data not available for this IP.")
-
-                                st.markdown("---")
-                                if hostname_results:
-                                    st.markdown(f"**Found {len(hostname_results)} associated hostname(s):**")
-                                    for item in hostname_results:
-                                        st.code(item.get('data', 'N/A'), language="text")
-                                else:
-                                    st.markdown("**No associated hostnames were found.** This could be a dynamic IP address or one not linked to a specific domain name.")
-
-                            shodan_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_shodan']
-                            if shodan_results:
-                                import json
-                                shodan_data_str = shodan_results[0].get('data', '{}')
-                                try:
-                                    shodan_data = json.loads(shodan_data_str)
-                                    
-                                    with st.container(border=True):
-                                        st.markdown(
-                                            "<h5>🔌 Open Services & Location (from Shodan)</h5>",
-                                            unsafe_allow_html=True,
-                                            help="Shodan scans the internet for devices. This data reveals what services are publicly accessible from this IP address."
-                                        )
-                                        
-                                        st.subheader("Location & Provider")
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            st.metric("📍 Country", shodan_data.get('country_name', 'N/A'))
-                                        with col2:
-                                            st.metric("🏙️ City", shodan_data.get('city', 'N/A'))
-                                        with col3:
-                                            st.metric("🏢 ISP", shodan_data.get('isp', 'N/A'))
-                                        st.markdown("---")
-
-                                        st.subheader("Exposed Services / Open Ports")
-                                        if shodan_data.get('data'):
-                                            for service in shodan_data['data']:
-                                                port = service.get('port', 'N/A')
-                                                service_name = service.get('product', 'Unknown Service')
-                                                transport = service.get('transport', 'tcp').upper()
-                                                st.error(f"**Port {port}/{transport}:** Running `{service_name}`", icon="⚠️")
-                                        else:
-                                            st.success("✅ No open ports or exposed services were identified by Shodan.")
-                                        
-                                        st.markdown("---")
-                                        st.subheader("Why This Matters")
-                                        st.warning("""
-                                        **Exposed services can be a major security risk.** Each open port is a potential entry point for attackers. Services like databases (MySQL, PostgreSQL) or remote access (SSH, RDP) should almost never be exposed directly to the public internet.
-                                        **💡 Recommendation:** If this is your IP address, review the list above. Any service that is not intentionally public should be firewalled. Ensure all public services are up-to-date and securely configured.
-                                        """)
-                                        with st.expander("View full raw Shodan data"):
-                                            st.json(shodan_data)
-
-                                except json.JSONDecodeError:
-                                    st.error("Could not parse raw Shodan data.")
-                        else:
-                            st.info("No SpiderFoot results available for this scan.")
-                    
-                    # 4. PHONE & IC VIEW
-                    elif scan['data_type'] in ("phone", "ic"):
-                        # NEW: Conditional title and icon based on the specific data type
-                        if scan['data_type'] == 'ic':
-                            st.markdown("### 🪪 Public Exposure Analysis")
-                        else:
-                            st.markdown("### 📞 Public Exposure Analysis")
-
-                        render_google_results_block(results)
-                        google_result = results.get("google_dork", {})
-                        google_list = google_result.get("data", []) if isinstance(google_result, dict) else []
-
-                        if google_list:
-                            # --- CONTEXTUAL RISK ANALYSIS ---
-                            st.markdown("---")
-                            st.error("🚨 What is the Risk? (HIGH)", icon="🔥")
-                            st.markdown("""
-                            Having your phone number or IC number publicly exposed online is a **HIGH** risk. Scammers and identity thieves actively search for this information. They can use it to:
-                            - **Target You with Scams:** You may receive an increase in spam calls and phishing text messages (SMSishing) trying to trick you into giving away money or passwords.
-                            - **Commit Identity Theft:** Your IC number is a key piece of information used to impersonate you, open fraudulent accounts, or apply for loans in your name.
-                            - **Hijack Your Accounts:** Many online services use your phone number for account recovery. An attacker could use this to try and take over your accounts (an attack called "SIM-swapping", where a scammer tricks your mobile provider into moving your number to their phone).
-                            """)
-
-                            st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                            st.markdown("""
-                            1.  **Investigate the Source:** Carefully review the links found above to understand why your information is public.
-                            2.  **Request Takedown:** If the information is on a website you don't control (like a forum or public directory), contact the website's administrator and formally request that they remove your personal information.
-                            3.  **Remove it Yourself:** If it's a post you made on social media or a forum, log in and delete it immediately.
-                            4.  **Be Extra Cautious:** Be extremely wary of unsolicited calls or text messages. Never give out personal information or one-time codes (OTPs) to anyone who contacts you unexpectedly.
-                            """)
-                            
-                    elif scan['data_type'] == "github_repo":
-                        st.markdown("### 🔑 GitHub Repository Exposure Analysis")
-                        trufflehog_result = results.get('trufflehog', {})
+                                    # For any other TypeError, show a generic message
+                                    st.error(f"PDF Generation Error: {e}", icon="🚨")
+                            except Exception as e:
+                                # For any other general exception
+                                st.error(f"An unexpected PDF error occurred: {e}", icon="🚨")# Shortened error for compact layout
                         
-                        if isinstance(trufflehog_result, dict) and trufflehog_result.get("data"):
-                            findings = trufflehog_result["data"]
-                            st.metric(label="Secrets Found", value=len(findings), delta_color="inverse")
-                            st.error(f"🚨 Found potential secret(s) exposed in this repository. Details below:", icon="🔥")
-
-                            for finding in findings:
-                                # Safely extract the nested GitHub metadata
-                                github_meta = finding.get("SourceMetadata", {}).get("Data", {}).get("Github", {})
-                                
-                                secret = finding.get("Raw", "Not found")
-                                repo = github_meta.get("repository", "N/A")
-                                file = github_meta.get("file", "N/A")
-                                link = github_meta.get("link", "#")
-
-                                with st.container(border=True):
-                                    st.markdown(f"**🔗 Source Repository:**")
-                                    st.markdown(f"[{repo}]({repo})")
-                                    
-                                    st.markdown(f"**📄 File:** `{file}`")
-
-                                    st.error("**🤫 Leaked Data:**")
-                                    st.code(secret, language="text")
-
-                                    st.markdown(f"**➡️ [Click here to view the exposed line on GitHub]({link})**")
-                        else:
-                            st.success("✅ No exposed secrets were found in this repository by our tools.")
-                        
-                        # --- CONTEXTUAL RISK ANALYSIS (This is still relevant) ---
                         st.markdown("---")
-                        st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
-                        st.markdown("""
-                        An exposed secret in a GitHub repository is a **CRITICAL** risk. It's like leaving the master key to your house, car, or business lying on the street. An attacker can use this key to:
-                        - **Access and Steal Your Data:** Read, modify, or delete information from the associated service.
-                        - **Impersonate You:** Perform actions on your behalf without your knowledge.
-                        - **Incur Financial Costs:** If the key is for a cloud service (like AWS or Google Cloud), an attacker can use it to run expensive services, leaving you with a massive bill.
-                        """)
 
-                        st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                        st.markdown("""
-                        **Act IMMEDIATELY. Every second counts.**
-                        1.  **Identify the Leaked Key:** Determine which key was exposed and what service it belongs to.
-                        2.  **Revoke the Key:** Log into the dashboard of that service and **revoke** or **delete** the compromised key. This is the most critical step.
-                        3.  **Generate a New Key:** Create a new, replacement key.
-                        4.  **Remove from History:** Remove the secret from the file and then use a tool like `git-filter-repo` or BFG Repo-Cleaner to erase it from the entire Git history. A simple commit is not enough.
-                        5.  **Update Your Applications:** Replace the old, revoked key with the new one in all your applications.
-                        """)
-                    elif scan['data_type'] == "password":
-                        st.markdown("### 🔑 Password Security Analysis")
-                        hibp_result = results.get('hibp_passwords', {})
                         
-                        if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), dict):
-                            with st.container(border=True):
-                                is_pwned = hibp_result["data"].get("pwned", False)
-                                count = hibp_result["data"].get("count", 0)
-                                if is_pwned:
-                                    st.error("🚨 This Password is Unsafe", icon="🔥")
-                                    st.metric(label="Found in Public Data Breaches", value=f"{count:,} times", delta_color="inverse")
+
+                        # --- ENRICHED/CONSOLIDATED VIEWS ---
+
+                        # 1. ENRICHED USERNAME VIEW
+                        if scan['data_type'] == 'username':
+                            st.markdown("### 🕵️ Username Footprint Analysis")
+                            
+                            sherlock_result = results.get('sherlock')
+                            
+                            st.subheader("Social Media Presence (from Sherlock)")
+                            if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list):
+                                sherlock_data = sherlock_result["data"]
+                                if not sherlock_data:
+                                    st.success("✅ No public social profiles found by Sherlock.")
+                                else:
+                                    st.metric(label="Public Profiles Found", value=len(sherlock_data))
+                                    st.warning("Found Public Social Profile(s)", icon="🕵️")
+                                    for url in sherlock_data:
+                                        ext = tldextract.extract(url)
+                                        platform = ext.domain.capitalize()
+                                        st.markdown(f"🔗 **{platform}:** [{url}]({url})")
                                     # --- CONTEXTUAL RISK ANALYSIS ---
                                     st.markdown("---")
-                                    st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
+                                    st.error("🚨 What is the Risk?", icon="🤔")
                                     st.markdown("""
-                                    This is a **CRITICAL** risk. **DO NOT USE THIS PASSWORD.** It is publicly known and is on lists used by hackers. Using this password for any account is like leaving your front door wide open.
-                                    - Attackers will use this password to try and log into your email, bank, and social media accounts (this is called "credential stuffing").
-                                    - If they get into one account, they will use it to try and reset your passwords for other accounts.
+                                    Even though these are public profiles, they create a 'digital footprint'. Attackers can combine information from different accounts (like your interests, location, friends, and workplace) to build a detailed profile of you. This information can be used for:
+                                    - **Targeted Phishing:** Creating very convincing scam emails or messages that you are more likely to fall for.
+                                    - **Identity Theft:** Answering 'security questions' to try and access your more sensitive accounts.
+                                    - **Social Engineering:** Tricking you or your friends into revealing more information.
                                     """)
 
                                     st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
                                     st.markdown("""
-                                    1.  **Stop Using This Password Immediately:** Identify every single online account where you are currently using this password.
-                                    2.  **Change Your Passwords:** Go to each of those websites and change your password to a **new, unique, and strong** one. Do not reuse passwords across different sites.
-                                    3.  **Use a Password Manager:** This is the best way to manage unique passwords. A password manager is a secure app that can generate and store very strong passwords for you, so you only have to remember one master password.
-                                        *   **Popular and trusted options include Bitwarden (which has a great free version) and 1Password.**
-                                    4.  **Enable Two-Factor Authentication (2FA):** Turn on 2FA everywhere possible. It provides a vital extra layer of security.
+                                    1.  **Review Each Profile:** Click on the links above and check what information is publicly visible.
+                                    2.  **Remove Sensitive Details:** Take down any personal data you don't want strangers to know, like your full date of birth, phone number, home address, or specific location check-ins.
+                                    3.  **Tighten Privacy Settings:** Go into the settings of each platform and limit who can see your posts, photos, and personal information. Change settings from "Public" to "Friends Only" or "Private".
                                     """)
+                            else:
+                                st.info("No Sherlock results available for this scan.")
+
+
+                        # 2. ENRICHED EMAIL VIEW
+                        elif scan['data_type'] == 'email':
+                            st.markdown("### 📧 Email Exposure Analysis")
+                            
+                            hibp_result = results.get('hibp_emails')
+
+                            st.subheader("Data Breach Exposure (from HIBP)")
+                            if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list):
+                                hibp_data = hibp_result["data"]
+                                if not hibp_data:
+                                    st.success("✅ No public breaches found for this email by HIBP.")
                                 else:
-                                    st.success("✅ This Password Appears Safe", icon="🛡️")
-                                    st.metric(label="Found in Data Breaches", value="0 times")
-                        else:
-                            st.info("No password check results available for this scan.")
+                                    st.metric(label="Breaches Found", value=len(hibp_data), delta_color="inverse")
+                                    st.error("🚨 Found in Public Data Breach", icon="🔥")
+                                    
+                                    for breach in hibp_data:
+                                        with st.container(border=True):
+                                            st.subheader(breach.get("Name", "Unknown Breach"))
+                                            tags_html = "".join([f"<span style='background-color:#ffebee; color:#c62828; padding: 3px 8px; border-radius:12px; margin-right:5px; font-size:0.85rem;'>{item}</span>" for item in breach.get("DataClasses", [])])
+                                            st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
 
-        else:
-            st.error(f"Failed to fetch scan history: Status code {res.status_code}")
-    except Exception as e:
-        st.error(f"❌ An error occurred while processing scan history: {e}", icon="🔥")
+                                    # --- CONTEXTUAL RISK ANALYSIS ---
+                                    st.markdown("---")
+                                    st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
+                                    st.markdown("""
+                                    This is a **CRITICAL** risk. Your email and other personal details from these breaches are likely available to hackers. They can use this information to:
+                                    - **Take Over Your Accounts:** If you reused the password from a breached site, they can access your other accounts (email, banking, social media).
+                                    - **Send Targeted Phishing Scams:** They can create very believable scam emails that appear to come from the breached company to trick you into giving away more information.
+                                    - **Commit Identity Theft:** With enough personal data, criminals can try to open new accounts or commit fraud in your name.
+                                    """)
+
+                                    st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                                    st.markdown("""
+                                    **Follow these steps immediately:**
+                                    1.  **Change Your Passwords:** Go to the websites listed in the breaches above and change your password right away.
+                                    2.  **Change Passwords Everywhere Else:** If you used the same (or a similar) password on other websites, change them too. Hackers will try the leaked password on hundreds of other popular sites.
+                                    3.  **Enable Two-Factor Authentication (2FA):** This is your best defense. Turn on 2FA for all your important accounts (especially email). This means that even if a hacker has your password, they can't log in without a code from your phone.
+                                    4.  **Be Vigilant:** Be extra suspicious of any unexpected emails, especially those that ask you to click links or download attachments.
+                                    """)
+                            else:
+                                st.info("No HIBP results available for this scan.")
+                                                
+
+                        # 2.5 (NEW) ENRICHED DOMAIN VIEW
+                        elif scan['data_type'] == 'domain':
+                            st.markdown("### 📈 Domain Intelligence Report")
+                            st.markdown("This report shows the public information available about your domain, including its ownership records and technical connections to the internet.")
+
+                            spiderfoot_result = results.get('spiderfoot')
+
+                            if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+                                spiderfoot_data = spiderfoot_result["data"]
+                                
+                                whois_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_whois']
+                                if whois_results:
+                                    with st.container(border=True):
+                                        st.markdown("<h5>📝 Ownership & Registration Details (WHOIS)</h5>", unsafe_allow_html=True)
+                                        st.info("**What is this?** This is the official public record of who owns this domain, like a deed for a house.", icon="💡")
+
+                                        raw_whois = whois_results[0].get('data', '')
+                                        
+                                        st.markdown("---")
+                                        st.subheader("Key Information")
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            registrar = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Registrar:' in line), 'N/A')
+                                            st.metric(label="✅ Official Provider (Registrar)", value=registrar)
+                                        with col2:
+                                            creation_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Creation Date:' in line), 'N/A')
+                                            st.metric(label="📅 Registered On", value=creation_date_str.split('T')[0] if 'T' in creation_date_str else creation_date_str)
+                                        with col3:
+                                            expiry_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Expiry Date:' in line), 'N/A')
+                                            st.metric(label="⏳ Expires On", value=expiry_date_str.split('T')[0] if 'T' in expiry_date_str else expiry_date_str)
+                                        st.markdown("---")
+                                        
+                                        st.subheader("Why This Matters & Recommendations")
+                                        
+                                        if "REDACTED" in raw_whois or "Privacy" in raw_whois:
+                                            st.success("""
+                                                **✅ Good News: Your personal contact information appears to be private.**
+                                                The record shows that details like your name, address, and email are hidden. This is excellent for security, as it prevents spammers and scammers from harvesting your personal data from this public record.
+                                            """, icon="🛡️")
+                                        else:
+                                            st.error("""
+                                                **⚠️ High-Risk Alert: Your Personal Information is Public.**
+                                                The ownership record for this domain appears to contain public contact details (name, address, email). This is a significant privacy risk.
+                                                **💡 Recommendation:** Contact your domain provider (the 'Registrar' listed above) and ask to enable **"WHOIS Privacy"** or **"Domain Privacy Protection."** Most providers offer this service for free or a small fee to hide your personal details.
+                                            """, icon="🔥")
+
+                                        with st.expander("View the full raw technical record"):
+                                            st.code(raw_whois, language="text")
+
+                                dns_results = [r for r in spiderfoot_data if r.get('module') in ['sfp_dns', 'sfp_dnsresolve']]
+                                if dns_results:
+                                    with st.container(border=True):
+                                        st.markdown("<h5>📡 Website & Email Server Connections (DNS)</h5>", unsafe_allow_html=True)
+                                        st.info("**What is this?** These are the technical records that act like the internet's phonebook. They tell browsers where to find your website and email servers.", icon="💡")
+                                        
+                                        st.markdown("---")
+                                        st.subheader("Key Connections")
+
+                                        primary_ip = None
+                                        ipv4_candidate = None
+                                        ipv6_candidate = None
+                                        fallback_candidate = None
+
+                                        for item in dns_results:
+                                            item_type = item.get('type', '').upper()
+                                            item_data = item.get('data', '')
+                                            item_source = item.get('source', '')
+
+                                            if item_type == 'IP_ADDRESS':
+                                                ipv4_candidate = item_data
+                                                break
+
+                                            if item_type == 'IPV6_ADDRESS' and not ipv6_candidate:
+                                                ipv6_candidate = item_data
+                                            
+                                            if item_data == scan['search_data']:
+                                                if '.' in item_source or ':' in item_source:
+                                                    if not fallback_candidate:
+                                                        fallback_candidate = item_source
+
+                                        primary_ip = ipv4_candidate or ipv6_candidate or fallback_candidate
+
+                                        if primary_ip:
+                                            st.metric(label="🌐 Website's Digital Address (IP)", value=primary_ip)
+                                            st.markdown(f"This is the unique address of the server hosting your website. When someone types `{scan['search_data']}` into a browser, DNS tells it to go to `{primary_ip}`.")
+                                        else:
+                                            st.markdown("No primary website address (IP Address) was found in this scan.")
+
+                                        st.markdown("---")
+                                        st.subheader("Why This Matters")
+                                        st.markdown("""
+                                        These records are essential for your online presence to function. If they are incorrect, your website or email service could go offline. While they don't typically contain sensitive personal data themselves, they confirm that your domain is actively connected to the internet.
+                                        **💡 Recommendation:** No action is typically needed here unless you are experiencing technical issues with your website or email. This information is mainly for verification and technical troubleshooting.
+                                        """)
+
+                                        with st.expander("View all technical DNS records"):
+                                            for item in dns_results:
+                                                readable_type = item.get('type', 'N/A').replace('_', ' ').title()
+                                                st.markdown(f"**{readable_type}:** `{item.get('data', 'N/A')}`")
+
+                            else:
+                                st.info("No SpiderFoot results available for this scan.")
+
+                        # 2.6 (NEW) ENRICHED IP ADDRESS VIEW
+                        elif scan['data_type'] == 'ip':
+                            st.markdown("### 📈 IP Address Intelligence Report")
+                            st.markdown("This report shows public information about this IP address, including associated hostnames, open services, and its reputation.")
+
+                            spiderfoot_result = results.get('spiderfoot')
+
+                            if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
+                                spiderfoot_data = spiderfoot_result["data"]
+                                
+                                vt_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_virustotal']
+                                hostname_results = [r for r in spiderfoot_data if r.get('type', '').upper() == 'INTERNET_NAME']
+
+                                with st.container(border=True):
+                                    st.markdown("<h5>📝 Reputation & Associated Hostnames</h5>", unsafe_allow_html=True)
+                                    
+                                    if vt_results:
+                                        detections = vt_results[0].get('data', '0/0').split('/')[0]
+                                        if detections == "0":
+                                            st.success("**✅ Reputation Clean:** This IP was not found in any security blacklists on VirusTotal.", icon="🛡️")
+                                        else:
+                                            st.error(f"**🔥 Malicious Reputation:** This IP was flagged by **{detections}** security vendors on VirusTotal as potentially malicious.", icon="🚨")
+                                    else:
+                                        st.info("Reputation data not available for this IP.")
+
+                                    st.markdown("---")
+                                    if hostname_results:
+                                        st.markdown(f"**Found {len(hostname_results)} associated hostname(s):**")
+                                        for item in hostname_results:
+                                            st.code(item.get('data', 'N/A'), language="text")
+                                    else:
+                                        st.markdown("**No associated hostnames were found.** This could be a dynamic IP address or one not linked to a specific domain name.")
+
+                                shodan_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_shodan']
+                                if shodan_results:
+                                    import json
+                                    shodan_data_str = shodan_results[0].get('data', '{}')
+                                    try:
+                                        shodan_data = json.loads(shodan_data_str)
+                                        
+                                        with st.container(border=True):
+                                            st.markdown(
+                                                "<h5>🔌 Open Services & Location (from Shodan)</h5>",
+                                                unsafe_allow_html=True,
+                                                help="Shodan scans the internet for devices. This data reveals what services are publicly accessible from this IP address."
+                                            )
+                                            
+                                            st.subheader("Location & Provider")
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                st.metric("📍 Country", shodan_data.get('country_name', 'N/A'))
+                                            with col2:
+                                                st.metric("🏙️ City", shodan_data.get('city', 'N/A'))
+                                            with col3:
+                                                st.metric("🏢 ISP", shodan_data.get('isp', 'N/A'))
+                                            st.markdown("---")
+
+                                            st.subheader("Exposed Services / Open Ports")
+                                            if shodan_data.get('data'):
+                                                for service in shodan_data['data']:
+                                                    port = service.get('port', 'N/A')
+                                                    service_name = service.get('product', 'Unknown Service')
+                                                    transport = service.get('transport', 'tcp').upper()
+                                                    st.error(f"**Port {port}/{transport}:** Running `{service_name}`", icon="⚠️")
+                                            else:
+                                                st.success("✅ No open ports or exposed services were identified by Shodan.")
+                                            
+                                            st.markdown("---")
+                                            st.subheader("Why This Matters")
+                                            st.warning("""
+                                            **Exposed services can be a major security risk.** Each open port is a potential entry point for attackers. Services like databases (MySQL, PostgreSQL) or remote access (SSH, RDP) should almost never be exposed directly to the public internet.
+                                            **💡 Recommendation:** If this is your IP address, review the list above. Any service that is not intentionally public should be firewalled. Ensure all public services are up-to-date and securely configured.
+                                            """)
+                                            with st.expander("View full raw Shodan data"):
+                                                st.json(shodan_data)
+
+                                    except json.JSONDecodeError:
+                                        st.error("Could not parse raw Shodan data.")
+                            else:
+                                st.info("No SpiderFoot results available for this scan.")
+                        
+                        # 4. PHONE & IC VIEW
+                        elif scan['data_type'] in ("phone", "ic"):
+                            # NEW: Conditional title and icon based on the specific data type
+                            if scan['data_type'] == 'ic':
+                                st.markdown("### 🪪 Public Exposure Analysis")
+                            else:
+                                st.markdown("### 📞 Public Exposure Analysis")
+
+                            render_google_results_block(results)
+                            google_result = results.get("google_dork", {})
+                            google_list = google_result.get("data", []) if isinstance(google_result, dict) else []
+
+                            if google_list:
+                                # --- CONTEXTUAL RISK ANALYSIS ---
+                                st.markdown("---")
+                                st.error("🚨 What is the Risk? (HIGH)", icon="🔥")
+                                st.markdown("""
+                                Having your phone number or IC number publicly exposed online is a **HIGH** risk. Scammers and identity thieves actively search for this information. They can use it to:
+                                - **Target You with Scams:** You may receive an increase in spam calls and phishing text messages (SMSishing) trying to trick you into giving away money or passwords.
+                                - **Commit Identity Theft:** Your IC number is a key piece of information used to impersonate you, open fraudulent accounts, or apply for loans in your name.
+                                - **Hijack Your Accounts:** Many online services use your phone number for account recovery. An attacker could use this to try and take over your accounts (an attack called "SIM-swapping", where a scammer tricks your mobile provider into moving your number to their phone).
+                                """)
+
+                                st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                                st.markdown("""
+                                1.  **Investigate the Source:** Carefully review the links found above to understand why your information is public.
+                                2.  **Request Takedown:** If the information is on a website you don't control (like a forum or public directory), contact the website's administrator and formally request that they remove your personal information.
+                                3.  **Remove it Yourself:** If it's a post you made on social media or a forum, log in and delete it immediately.
+                                4.  **Be Extra Cautious:** Be extremely wary of unsolicited calls or text messages. Never give out personal information or one-time codes (OTPs) to anyone who contacts you unexpectedly.
+                                """)
+                                
+                        elif scan['data_type'] == "github_repo":
+                            st.markdown("### 🔑 GitHub Repository Exposure Analysis")
+                            trufflehog_result = results.get('trufflehog', {})
+                            
+                            if isinstance(trufflehog_result, dict) and trufflehog_result.get("data"):
+                                findings = trufflehog_result["data"]
+                                st.metric(label="Secrets Found", value=len(findings), delta_color="inverse")
+                                st.error(f"🚨 Found potential secret(s) exposed in this repository. Details below:", icon="🔥")
+
+                                for finding in findings:
+                                    # Safely extract the nested GitHub metadata
+                                    github_meta = finding.get("SourceMetadata", {}).get("Data", {}).get("Github", {})
+                                    
+                                    secret = finding.get("Raw", "Not found")
+                                    repo = github_meta.get("repository", "N/A")
+                                    file = github_meta.get("file", "N/A")
+                                    link = github_meta.get("link", "#")
+
+                                    with st.container(border=True):
+                                        st.markdown(f"**🔗 Source Repository:**")
+                                        st.markdown(f"[{repo}]({repo})")
+                                        
+                                        st.markdown(f"**📄 File:** `{file}`")
+
+                                        st.error("**🤫 Leaked Data:**")
+                                        st.code(secret, language="text")
+
+                                        st.markdown(f"**➡️ [Click here to view the exposed line on GitHub]({link})**")
+                            else:
+                                st.success("✅ No exposed secrets were found in this repository by our tools.")
+                            
+                            # --- CONTEXTUAL RISK ANALYSIS (This is still relevant) ---
+                            st.markdown("---")
+                            st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
+                            st.markdown("""
+                            An exposed secret in a GitHub repository is a **CRITICAL** risk. It's like leaving the master key to your house, car, or business lying on the street. An attacker can use this key to:
+                            - **Access and Steal Your Data:** Read, modify, or delete information from the associated service.
+                            - **Impersonate You:** Perform actions on your behalf without your knowledge.
+                            - **Incur Financial Costs:** If the key is for a cloud service (like AWS or Google Cloud), an attacker can use it to run expensive services, leaving you with a massive bill.
+                            """)
+
+                            st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                            st.markdown("""
+                            **Act IMMEDIATELY. Every second counts.**
+                            1.  **Identify the Leaked Key:** Determine which key was exposed and what service it belongs to.
+                            2.  **Revoke the Key:** Log into the dashboard of that service and **revoke** or **delete** the compromised key. This is the most critical step.
+                            3.  **Generate a New Key:** Create a new, replacement key.
+                            4.  **Remove from History:** Remove the secret from the file and then use a tool like `git-filter-repo` or BFG Repo-Cleaner to erase it from the entire Git history. A simple commit is not enough.
+                            5.  **Update Your Applications:** Replace the old, revoked key with the new one in all your applications.
+                            """)
+                        elif scan['data_type'] == "password":
+                            st.markdown("### 🔑 Password Security Analysis")
+                            hibp_result = results.get('hibp_passwords', {})
+                            
+                            if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), dict):
+                                with st.container(border=True):
+                                    is_pwned = hibp_result["data"].get("pwned", False)
+                                    count = hibp_result["data"].get("count", 0)
+                                    if is_pwned:
+                                        st.error("🚨 This Password is Unsafe", icon="🔥")
+                                        st.metric(label="Found in Public Data Breaches", value=f"{count:,} times", delta_color="inverse")
+                                        # --- CONTEXTUAL RISK ANALYSIS ---
+                                        st.markdown("---")
+                                        st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
+                                        st.markdown("""
+                                        This is a **CRITICAL** risk. **DO NOT USE THIS PASSWORD.** It is publicly known and is on lists used by hackers. Using this password for any account is like leaving your front door wide open.
+                                        - Attackers will use this password to try and log into your email, bank, and social media accounts (this is called "credential stuffing").
+                                        - If they get into one account, they will use it to try and reset your passwords for other accounts.
+                                        """)
+
+                                        st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                                        st.markdown("""
+                                        1.  **Stop Using This Password Immediately:** Identify every single online account where you are currently using this password.
+                                        2.  **Change Your Passwords:** Go to each of those websites and change your password to a **new, unique, and strong** one. Do not reuse passwords across different sites.
+                                        3.  **Use a Password Manager:** This is the best way to manage unique passwords. A password manager is a secure app that can generate and store very strong passwords for you, so you only have to remember one master password.
+                                            *   **Popular and trusted options include Bitwarden (which has a great free version) and 1Password.**
+                                        4.  **Enable Two-Factor Authentication (2FA):** Turn on 2FA everywhere possible. It provides a vital extra layer of security.
+                                        """)
+                                    else:
+                                        st.success("✅ This Password Appears Safe", icon="🛡️")
+                                        st.metric(label="Found in Data Breaches", value="0 times")
+                            else:
+                                st.info("No password check results available for this scan.")
+
+            else:
+                st.error(f"Failed to fetch scan history: Status code {res.status_code}")
+        except Exception as e:
+            st.error(f"❌ An error occurred while processing scan history: {e}", icon="🔥")
 
 
 
-# --- END OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
-elif selected == "About Tools":
-    st.header("🛠️ Our OSINT Arsenal")
-    st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
-    tools_info = {
-        "🐷 TruffleHog": { 
-            "purpose": "Scans public GitHub repositories for exposed secrets.", 
-            "scans": ["API Keys & Tokens", "Passwords & Private Keys"] 
-        },
-        "🌐 Google Custom Search": { 
-            "purpose": "Uses targeted search queries to find data indexed on the public web.", 
-            "scans": ["Phone Numbers", "IC Numbers"] 
-        },
-        "🕷️ SpiderFoot": { 
-            "purpose": "Automated OSINT to gather public intelligence on internet assets.", 
-            "scans": ["Domain & IP Intelligence", "Public Server Information (WHOIS, DNS)"] 
-        },
-        "🕵️ Sherlock": { 
-            "purpose": "Hunts down social media and forum accounts by username.", 
-            "scans": ["Social Media Profiles", "Forum Accounts"] 
-        },
-        "📧 HIBP API": { 
-            "purpose": "Checks against a massive database of known public data breaches.", 
-            "scans": ["Leaked Emails", "Exposed Passwords"] 
+    # --- END OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
+    elif selected == "About Tools":
+        st.header("🛠️ Our OSINT Arsenal")
+        st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
+        tools_info = {
+            "🐷 TruffleHog": { 
+                "purpose": "Scans public GitHub repositories for exposed secrets.", 
+                "scans": ["API Keys & Tokens", "Passwords & Private Keys"] 
+            },
+            "🌐 Google Custom Search": { 
+                "purpose": "Uses targeted search queries to find data indexed on the public web.", 
+                "scans": ["Phone Numbers", "IC Numbers"] 
+            },
+            "🕷️ SpiderFoot": { 
+                "purpose": "Automated OSINT to gather public intelligence on internet assets.", 
+                "scans": ["Domain & IP Intelligence", "Public Server Information (WHOIS, DNS)"] 
+            },
+            "🕵️ Sherlock": { 
+                "purpose": "Hunts down social media and forum accounts by username.", 
+                "scans": ["Social Media Profiles", "Forum Accounts"] 
+            },
+            "📧 HIBP API": { 
+                "purpose": "Checks against a massive database of known public data breaches.", 
+                "scans": ["Leaked Emails", "Exposed Passwords"] 
+            }
         }
-    }
-    for tool, info in tools_info.items():
-        with st.expander(tool, expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Purpose:**")
-                st.markdown(f"<p style='color:#343A40;'>{info['purpose']}</p>", unsafe_allow_html=True)
-            with col2:
-                st.markdown("**What it scans:**")
-                for item in info['scans']:
-                    st.markdown(f"- {item}")
-    st.markdown("---")
-    
-    st.subheader("⚙️ How Our Scanning Works")
-    col1, col2, col3 = st.columns(3, gap="large")
-    with col1:
-        st.markdown("**1. Input Processing**")
-        st.markdown("- Validates input\n- Selects tools")
-    with col2:
-        st.markdown("**2. Parallel Scanning**")
-        st.markdown("- Runs tools simultaneously\n- Monitors progress")
-    with col3:
-        st.markdown("**3. Results Analysis**")
-        st.markdown("- Aggregates findings\n- Removes duplicates")
-    st.markdown("---")
-    st.subheader("🔒 Security & Privacy")
-    col1, col2 = st.columns(2, gap="large")
-    with col1:
-        st.markdown("**Data Protection:**")
-        st.markdown("- Scans are encrypted\n- No permanent storage\n- Auto-delete results")
-    with col2:
-        st.markdown("**Ethical Scanning:**")
-        st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
-elif selected == "Reports":
-    st.header("📈 Security Reports")
-    st.markdown("View comprehensive analysis and generate downloadable reports of your security scans.")
-    
-    with st.container(border=True):
-        st.info("📊 This feature is under development. Detailed reports will be available here soon.", icon="💡")
-        st.subheader("What You'll Get:")
-        st.markdown("""
-        - **📋 Summary Report**: An easy-to-understand overview of all findings.
-        - **🔍 Detailed Analysis**: A complete breakdown of each security check.
-        - **🚨 Risk Assessment**: Clear explanations of what the findings mean for you.
-        - **💡 Actionable Recommendations**: Simple steps to improve your digital safety.
-        - **📁 Export Options**: Download reports as PDF or spreadsheets.
-        """)
-    st.success("🛡️ **Our Goal:** Reports are written in simple language for everyone to understand.")
-elif selected == "FAQ":
-    st.header("❓ Frequently Asked Questions")
-    st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
-    # --- NEW CATEGORY ---
-    st.subheader("🚨 Understanding Your Results")
-    with st.expander("**What should I do if I find my data has been leaked?**", expanded=True): # Expanded by default
-        st.markdown("""
-        Finding your data has been exposed can be stressful, but taking swift action is key. Here are the recommended steps:
-        - **1. Change Compromised Credentials:** If a password or username was leaked, change that password **immediately** on every site where you have used it. Prioritize critical accounts like email and banking.
-        - **2. Revoke and Regenerate Keys:** If an API key or token was exposed, revoke it immediately in that service's dashboard and generate a new one.
-        - **3. Enable Two-Factor Authentication (2FA):** For any affected account, enable 2FA (or MFA). This is one of the most effective ways to secure an account even if the password is known.
-        """)
-    with st.expander("**Why do some scans show “No Leaks Found” even if I suspect an exposure?**"):
-        st.markdown("""
-        There are a few reasons why a scan might not find something you suspect is out there:
-        - **Not Yet Publicly Indexed:** The data leak may have occurred, but it might not have been discovered and indexed in the public breach databases that our tools scan.
-        - **Outside Our Scan Scope:** The leak could be on a private forum, a marketplace on the dark web, or another source that our public-facing OSINT tools do not cover.
-        - **Data Has Been Removed:** The exposed data may have been found and removed from the public site where it was posted (like Pastebin).
-        We recommend rescanning periodically, as databases are constantly updated with new information.
-        """)
-    st.subheader("🛡️ Security & Privacy")
-    with st.expander("**Is it safe to enter my password or API key here?**"):
-        st.markdown("""
-        **Yes.** We prioritize your security and privacy above all else. Here’s how we handle sensitive data:
-        - **Passwords:** We **never** send your actual password to any server. We use a technique called "k-Anonymity" (the same model used by the trusted Have I Been Pwned service). This allows us to check for a breach without ever exposing the full password you entered.
-        - **API Keys & Other Secrets:** Your input is sent directly to the scanning tools (like TruffleHog) to be checked against public data. It is **never** written to our database or stored after the scan is complete.
-        Our fundamental goal is to help you find *existing* public leaks, not create new ones.
-        """)
-    with st.expander("**Where does the system search for my data?**"):
-        st.markdown("""
-        The system scans **only publicly available sources**. This includes places like:
-        - **Public Code Repositories:** Searching sites like GitHub for exposed API keys and secrets (via TruffleHog).
-        - **Public Web Pages:** Using targeted searches to find indexed information on websites and public documents (via Google Custom Search).
-        - **Social Media & Forums:** Searching for public profiles across hundreds of sites that match a username (via Sherlock).
-        - **Known Data Breaches:** Checking against a large, aggregated database of credentials from past public breaches (via HIBP).
-        - **Domain & IP Records:** Querying public records like WHOIS and DNS to understand a domain's footprint (via SpiderFoot).
-
-        We **do not** access private databases or systems. All scans are performed within the bounds of ethical open-source intelligence gathering.
-        """)
-    with st.expander("**Do you store my search history or results?**"):
-        st.markdown("""
-        Yes, the results of your scans are stored in a secure database so you can review them later in the **Scan History** tab. This data is linked only to your user session and is never made public or shared.
-
-        To protect your privacy, this data is not stored indefinitely. **All scan results are automatically and permanently deleted from our system after 14 days.**
-
-        This 14-day period provides a convenient window for you to review your findings, while ensuring your search history is not retained long-term, prioritizing your security and privacy.
-        """)
-    with st.expander("**Is this service legal to use?**"):
-        st.markdown("""
-        **Yes.** This system exclusively uses **Open-Source Intelligence (OSINT)** tools and techniques. This means it only searches for, aggregates, and displays data that is **already publicly available** on the internet.
-        It does not perform any hacking, cracking, or unauthorized access of any kind into private systems. It is a tool for discovering your public footprint, not for malicious activity.
-        """)
-    st.subheader("⚙️ Using the Scanner")
-    with st.expander("**Why did my scan take a long time?**"):
-        st.markdown("Some scans, especially for general data types like API keys, require searching vast sources like all of public GitHub. This can naturally take several minutes. Scans for more specific data types, like checking a password against a breach list, are usually much faster.")
-    with st.expander("**What do I do if a tool returns an error?**"):
-        st.markdown("Occasionally, a third-party service that a tool relies on may be temporarily unavailable. If you receive an error, we recommend waiting a few minutes and trying the scan again. If the problem persists, it may be an issue with the specific open-source tool itself.")
-elif selected == "Homepage":
-    st.markdown("""
-        <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 1.5rem; margin-bottom:1rem;'>
-            <h1 style='color: #FFFFFF;'>👋 Welcome to the Data Leakage Monitoring System</h1>
-            <p style='color: #FFFFFF; font-size: 1.1rem;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    st.subheader("🔍 What This System Can Do")
-    col1, col2, col3 = st.columns(3, gap="large")
-    with col1:
+        for tool, info in tools_info.items():
+            with st.expander(tool, expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Purpose:**")
+                    st.markdown(f"<p style='color:#343A40;'>{info['purpose']}</p>", unsafe_allow_html=True)
+                with col2:
+                    st.markdown("**What it scans:**")
+                    for item in info['scans']:
+                        st.markdown(f"- {item}")
+        st.markdown("---")
+        
+        st.subheader("⚙️ How Our Scanning Works")
+        col1, col2, col3 = st.columns(3, gap="large")
+        with col1:
+            st.markdown("**1. Input Processing**")
+            st.markdown("- Validates input\n- Selects tools")
+        with col2:
+            st.markdown("**2. Parallel Scanning**")
+            st.markdown("- Runs tools simultaneously\n- Monitors progress")
+        with col3:
+            st.markdown("**3. Results Analysis**")
+            st.markdown("- Aggregates findings\n- Removes duplicates")
+        st.markdown("---")
+        st.subheader("🔒 Security & Privacy")
+        col1, col2 = st.columns(2, gap="large")
+        with col1:
+            st.markdown("**Data Protection:**")
+            st.markdown("- Scans are encrypted\n- No permanent storage\n- Auto-delete results")
+        with col2:
+            st.markdown("**Ethical Scanning:**")
+            st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
+    elif selected == "Reports":
+        st.header("📈 Security Reports")
+        st.markdown("View comprehensive analysis and generate downloadable reports of your security scans.")
+        
         with st.container(border=True):
-            st.markdown(
-                """
-                <div style="text-align:center;">
-                    <img src="https://cdn-icons-png.flaticon.com/512/3502/3502601.png" width="50">
-                    <h3>Automated Leak Scanning</h3>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            st.write("Search public platforms for exposed data.")
-    with col2:
-        with st.container(border=True):
-            st.markdown(
-                """
-                <div style="text-align:center;">
-                    <img src="https://cdn-icons-png.flaticon.com/512/1055/1055645.png" width="50">
-                    <h3>Understand Results</h3>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            st.write("Get clear results on what was found and why it matters.")
-    with col3:
-        with st.container(border=True):
-            st.markdown(
-                """
-                <div style="text-align:center;">
-                    <img src="https://cdn-icons-png.flaticon.com/512/942/942792.png" width="50">
-                    <h3>Protect Your Identity</h3>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            st.write("Receive simple, non-technical steps to improve your security.")
+            st.info("📊 This feature is under development. Detailed reports will be available here soon.", icon="💡")
+            st.subheader("What You'll Get:")
+            st.markdown("""
+            - **📋 Summary Report**: An easy-to-understand overview of all findings.
+            - **🔍 Detailed Analysis**: A complete breakdown of each security check.
+            - **🚨 Risk Assessment**: Clear explanations of what the findings mean for you.
+            - **💡 Actionable Recommendations**: Simple steps to improve your digital safety.
+            - **📁 Export Options**: Download reports as PDF or spreadsheets.
+            """)
+        st.success("🛡️ **Our Goal:** Reports are written in simple language for everyone to understand.")
+    elif selected == "FAQ":
+        st.header("❓ Frequently Asked Questions")
+        st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
+        # --- NEW CATEGORY ---
+        st.subheader("🚨 Understanding Your Results")
+        with st.expander("**What should I do if I find my data has been leaked?**", expanded=True): # Expanded by default
+            st.markdown("""
+            Finding your data has been exposed can be stressful, but taking swift action is key. Here are the recommended steps:
+            - **1. Change Compromised Credentials:** If a password or username was leaked, change that password **immediately** on every site where you have used it. Prioritize critical accounts like email and banking.
+            - **2. Revoke and Regenerate Keys:** If an API key or token was exposed, revoke it immediately in that service's dashboard and generate a new one.
+            - **3. Enable Two-Factor Authentication (2FA):** For any affected account, enable 2FA (or MFA). This is one of the most effective ways to secure an account even if the password is known.
+            """)
+        with st.expander("**Why do some scans show “No Leaks Found” even if I suspect an exposure?**"):
+            st.markdown("""
+            There are a few reasons why a scan might not find something you suspect is out there:
+            - **Not Yet Publicly Indexed:** The data leak may have occurred, but it might not have been discovered and indexed in the public breach databases that our tools scan.
+            - **Outside Our Scan Scope:** The leak could be on a private forum, a marketplace on the dark web, or another source that our public-facing OSINT tools do not cover.
+            - **Data Has Been Removed:** The exposed data may have been found and removed from the public site where it was posted (like Pastebin).
+            We recommend rescanning periodically, as databases are constantly updated with new information.
+            """)
+        st.subheader("🛡️ Security & Privacy")
+        with st.expander("**Is it safe to enter my password or API key here?**"):
+            st.markdown("""
+            **Yes.** We prioritize your security and privacy above all else. Here’s how we handle sensitive data:
+            - **Passwords:** We **never** send your actual password to any server. We use a technique called "k-Anonymity" (the same model used by the trusted Have I Been Pwned service). This allows us to check for a breach without ever exposing the full password you entered.
+            - **API Keys & Other Secrets:** Your input is sent directly to the scanning tools (like TruffleHog) to be checked against public data. It is **never** written to our database or stored after the scan is complete.
+            Our fundamental goal is to help you find *existing* public leaks, not create new ones.
+            """)
+        with st.expander("**Where does the system search for my data?**"):
+            st.markdown("""
+            The system scans **only publicly available sources**. This includes places like:
+            - **Public Code Repositories:** Searching sites like GitHub for exposed API keys and secrets (via TruffleHog).
+            - **Public Web Pages:** Using targeted searches to find indexed information on websites and public documents (via Google Custom Search).
+            - **Social Media & Forums:** Searching for public profiles across hundreds of sites that match a username (via Sherlock).
+            - **Known Data Breaches:** Checking against a large, aggregated database of credentials from past public breaches (via HIBP).
+            - **Domain & IP Records:** Querying public records like WHOIS and DNS to understand a domain's footprint (via SpiderFoot).
 
-    st.markdown("---")
-    # --- 3. NEW SECTION: WHY IT MATTERS ---
-    # --- WHY IT MATTERS SECTION (with larger, more readable text) ---
-    st.subheader("👣 Why Your Digital Footprint Matters")
-    st.markdown("Every day, personal data is leaked online. This exposure can lead to serious consequences.")
-    col1, col2, col3 = st.columns(3, gap="large")
-    with col1:
+            We **do not** access private databases or systems. All scans are performed within the bounds of ethical open-source intelligence gathering.
+            """)
+        with st.expander("**Do you store my search history or results?**"):
+            st.markdown("""
+            Yes, the results of your scans are stored in a secure database so you can review them later in the **Scan History** tab. This data is linked only to your user session and is never made public or shared.
+
+            To protect your privacy, this data is not stored indefinitely. **All scan results are automatically and permanently deleted from our system after 14 days.**
+
+            This 14-day period provides a convenient window for you to review your findings, while ensuring your search history is not retained long-term, prioritizing your security and privacy.
+            """)
+        with st.expander("**Is this service legal to use?**"):
+            st.markdown("""
+            **Yes.** This system exclusively uses **Open-Source Intelligence (OSINT)** tools and techniques. This means it only searches for, aggregates, and displays data that is **already publicly available** on the internet.
+            It does not perform any hacking, cracking, or unauthorized access of any kind into private systems. It is a tool for discovering your public footprint, not for malicious activity.
+            """)
+        st.subheader("⚙️ Using the Scanner")
+        with st.expander("**Why did my scan take a long time?**"):
+            st.markdown("Some scans, especially for general data types like API keys, require searching vast sources like all of public GitHub. This can naturally take several minutes. Scans for more specific data types, like checking a password against a breach list, are usually much faster.")
+        with st.expander("**What do I do if a tool returns an error?**"):
+            st.markdown("Occasionally, a third-party service that a tool relies on may be temporarily unavailable. If you receive an error, we recommend waiting a few minutes and trying the scan again. If the problem persists, it may be an issue with the specific open-source tool itself.")
+    elif selected == "Homepage":
         st.markdown("""
-            <div style='text-align:center'>
-                <p style='font-size: 2rem;'>💰</p>
-                <h4 style='margin-bottom: 0.5rem;'>Financial Fraud</h4>
-                <p>Stolen credit cards or bank details can be used for unauthorized purchases.</p>
+            <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 1.5rem; margin-bottom:1rem;'>
+                <h1 style='color: #FFFFFF;'>👋 Welcome to the Data Leakage Monitoring System</h1>
+                <p style='color: #FFFFFF; font-size: 1.1rem;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
             </div>
         """, unsafe_allow_html=True)
-    with col2:
+        
+        # --- NEW: PROMINENT LOGIN CALL-TO-ACTION FOR GUESTS ---
+        if 'user' not in st.session_state:
+            st.subheader("Get Started")
+            with st.container(border=True):
+                st.markdown("#### Ready to secure your digital footprint?")
+                st.markdown("Sign in to access your private dashboard, view detailed reports, and manage your scan history.")
+                auth_url = get_authorization_url()
+                st.link_button("Sign in to Continue", auth_url, use_container_width=True)
+            st.markdown("---")
+        # --- END OF NEW SECTION ---
+
+        st.subheader("🔍 What This System Can Do")
+        col1, col2, col3 = st.columns(3, gap="large")
+        with col1:
+            with st.container(border=True):
+                st.markdown(
+                    """
+                    <div style="text-align:center;">
+                        <img src="https://cdn-icons-png.flaticon.com/512/3502/3502601.png" width="50">
+                        <h3>Automated Leak Scanning</h3>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.write("Search public platforms for exposed data.")
+        with col2:
+            with st.container(border=True):
+                st.markdown(
+                    """
+                    <div style="text-align:center;">
+                        <img src="https://cdn-icons-png.flaticon.com/512/1055/1055645.png" width="50">
+                        <h3>Understand Results</h3>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.write("Get clear results on what was found and why it matters.")
+        with col3:
+            with st.container(border=True):
+                st.markdown(
+                    """
+                    <div style="text-align:center;">
+                        <img src="https://cdn-icons-png.flaticon.com/512/942/942792.png" width="50">
+                        <h3>Protect Your Identity</h3>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.write("Receive simple, non-technical steps to improve your security.")
+
+        st.markdown("---")
+        # --- 3. NEW SECTION: WHY IT MATTERS ---
+        # --- WHY IT MATTERS SECTION (with larger, more readable text) ---
+        st.subheader("👣 Why Your Digital Footprint Matters")
+        st.markdown("Every day, personal data is leaked online. This exposure can lead to serious consequences.")
+        col1, col2, col3 = st.columns(3, gap="large")
+        with col1:
+            st.markdown("""
+                <div style='text-align:center'>
+                    <p style='font-size: 2rem;'>💰</p>
+                    <h4 style='margin-bottom: 0.5rem;'>Financial Fraud</h4>
+                    <p>Stolen credit cards or bank details can be used for unauthorized purchases.</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown("""
+                <div style='text-align:center'>
+                    <p style='font-size: 2rem;'>🎭</p>
+                    <h4 style='margin-bottom: 0.5rem;'>Identity Theft</h4>
+                    <p>Leaked personal info can be used to open accounts or commit crimes in your name.</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col3:
+            st.markdown("""
+                <div style='text-align:center'>
+                    <p style='font-size: 2rem;'>📧</p>
+                    <h4 style='margin-bottom: 0.5rem;'>Targeted Phishing</h4>
+                    <p>Hackers use leaked data to create convincing scams to trick you into revealing more.</p>
+                </div>
+            """, unsafe_allow_html=True)
+        st.markdown("---")
+        # --- 4. NEW SECTION: HOW IT WORKS ---
+        st.subheader("⚙️ A Simple, Powerful Process")
+        col1, col2, col3 = st.columns(3, gap="large")
+        with col1:
+            st.markdown("### 1. Provide Input\nSelect a data type (like an email or username) and enter the information you want to check.", unsafe_allow_html=True)
+        with col2:
+            st.markdown("### 2. Intelligent Scanning\nOur system intelligently selects the best tools for the job. Based on your chosen data type, we run targeted scans against the most relevant sources.", unsafe_allow_html=True)
+        with col3:
+            st.markdown("### 3. Get Unified Results\nWe consolidate all findings into a single, easy-to-read report in your 'Scan History' with clear recommendations.", unsafe_allow_html=True)
+        # --- 5. SECURITY TIP (MOVED HERE) ---
+        st.subheader("💡 Security Tip of the Day")
+        tips = [
+            ("🔐 Use a Password Manager", "Tools like Bitwarden or 1Password create and store strong, unique passwords for every account, which is the single best thing you can do for your security."),
+            ("🤔 Think Before You Click", "Be cautious of phishing emails and messages. Never click suspicious links or download unexpected attachments. Always verify the sender."),
+            ("🔑 Enable Two-Factor Authentication (2FA)", "2FA adds a critical second layer of security to your accounts, requiring a code from your phone in addition to your password."),
+        ]
+        tip_title, tip_body = random.choice(tips)
+        with st.container(border=True):
+            st.markdown(f"#### {tip_title}")
+            st.markdown(tip_body)
+        st.markdown("---")
+        st.subheader("🛠️ Powered by Leading Open-Source Tools")
         st.markdown("""
-            <div style='text-align:center'>
-                <p style='font-size: 2rem;'>🎭</p>
-                <h4 style='margin-bottom: 0.5rem;'>Identity Theft</h4>
-                <p>Leaked personal info can be used to open accounts or commit crimes in your name.</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-            <div style='text-align:center'>
-                <p style='font-size: 2rem;'>📧</p>
-                <h4 style='margin-bottom: 0.5rem;'>Targeted Phishing</h4>
-                <p>Hackers use leaked data to create convincing scams to trick you into revealing more.</p>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown("---")
-    # --- 4. NEW SECTION: HOW IT WORKS ---
-    st.subheader("⚙️ A Simple, Powerful Process")
-    col1, col2, col3 = st.columns(3, gap="large")
-    with col1:
-        st.markdown("### 1. Provide Input\nSelect a data type (like an email or username) and enter the information you want to check.", unsafe_allow_html=True)
-    with col2:
-        st.markdown("### 2. Intelligent Scanning\nOur system intelligently selects the best tools for the job. Based on your chosen data type, we run targeted scans against the most relevant sources.", unsafe_allow_html=True)
-    with col3:
-        st.markdown("### 3. Get Unified Results\nWe consolidate all findings into a single, easy-to-read report in your 'Scan History' with clear recommendations.", unsafe_allow_html=True)
-    # --- 5. SECURITY TIP (MOVED HERE) ---
-    st.subheader("💡 Security Tip of the Day")
-    tips = [
-        ("🔐 Use a Password Manager", "Tools like Bitwarden or 1Password create and store strong, unique passwords for every account, which is the single best thing you can do for your security."),
-        ("🤔 Think Before You Click", "Be cautious of phishing emails and messages. Never click suspicious links or download unexpected attachments. Always verify the sender."),
-        ("🔑 Enable Two-Factor Authentication (2FA)", "2FA adds a critical second layer of security to your accounts, requiring a code from your phone in addition to your password."),
-    ]
-    tip_title, tip_body = random.choice(tips)
-    with st.container(border=True):
-        st.markdown(f"#### {tip_title}")
-        st.markdown(tip_body)
-    st.markdown("---")
-    st.subheader("🛠️ Powered by Leading Open-Source Tools")
-    st.markdown("""
-    Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:
-    - **🐷 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
-    - **🕵️ Sherlock:** Hunts for your username across over 400 social media sites and online communities.
-    - **📧 HIBP API:** Checks if your email address or password has appeared in thousands of known public data breaches.
-    - **🕷️ SpiderFoot & theHarvester:** Gathers public intelligence on domains and IPs to map your digital footprint.
-    """)
-    st.markdown("---")
-    
-    st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive data. All scans are conducted ethically using only publicly available information.")
+        Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:
+        - **🐷 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
+        - **🕵️ Sherlock:** Hunts for your username across over 400 social media sites and online communities.
+        - **📧 HIBP API:** Checks if your email address or password has appeared in thousands of known public data breaches.
+        - **🕷️ SpiderFoot & theHarvester:** Gathers public intelligence on domains and IPs to map your digital footprint.
+        """)
+        st.markdown("---")
+        
+        st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive data. All scans are conducted ethically using only publicly available information.")
