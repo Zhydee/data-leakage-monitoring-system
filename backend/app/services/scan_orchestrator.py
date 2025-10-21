@@ -27,8 +27,16 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-async def start_scan_job(request: ScanRequest) -> int:
-    logging.info("Scan job initiated...")
+
+async def start_scan_job(request: ScanRequest, scan_source: str = "manual") -> int:
+    """
+    Initiates a scan job for the given request.
+    
+    Args:
+        request: The scan request details.
+        scan_source: The origin of the scan ('manual' or 'automated').
+    """
+    logging.info(f"Scan job initiated from source: {scan_source}...")
     db = SessionLocal()
     scan_id = None # Initialize scan_id
 
@@ -53,7 +61,8 @@ async def start_scan_job(request: ScanRequest) -> int:
             search_data=request.search_data,
             custom_regex=request.custom_regex,
             status="running",
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            scan_source=scan_source
         )
         scan_id = scan_job.id
         logging.info(f"ScanJob created successfully with ID: {scan_id}")

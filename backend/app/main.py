@@ -7,14 +7,17 @@ import os
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter # Import the new shared limiter
-# --- NEW IMPORTS FOR SCHEDULER ---
-from apscheduler.schedulers.background import BackgroundScheduler
+# --- IMPORTS FOR SCHEDULER ---
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.utils.cleanup import delete_old_scan_records
+from app.utils.scheduler_jobs import run_automated_scans 
 import logging
 from contextlib import asynccontextmanager 
+import asyncio
 
 from app.api.routes import scan # Import the scan router
 from app.api.routes import history
+from app.api.routes import scan, history, monitoring # Add monitoring
 
 load_dotenv()
 
@@ -23,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Initialize the scheduler ---
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 
 # --- A function to start the scheduler and add the job ---
 @asynccontextmanager
@@ -34,8 +37,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up the application...")
     # Schedule the cleanup job to run once every day at 3:00 AM server time
     scheduler.add_job(delete_old_scan_records, 'interval', days=1, id="daily_cleanup_job")
+    # --- NEW: Schedule the automated scanning job to run every 6 hours ---
+    scheduler.add_job(run_automated_scans, 'interval', hours=12, id="automated_scanning_job")
     scheduler.start()
-    logger.info("Scheduler started and cleanup job has been scheduled.")
+    logger.info("Scheduler started. Cleanup and Automated Scanning jobs have been scheduled.")
     
     yield # The application is now running
 
@@ -68,6 +73,8 @@ app.add_middleware(
 
 app.include_router(scan.router, prefix="/scan")
 app.include_router(history.router)
+# --- The monitoring router ---
+app.include_router(monitoring.router, prefix="/monitoring")
 
 @app.get("/")
 async def root():

@@ -8,23 +8,26 @@ from app.database import SessionLocal
 class ScanJob(Base):
     __tablename__ = "scan_jobs"
     id = Column(Integer, primary_key=True, index=True)
+    
+    # --- 1. ADD THE NEW COLUMN TO THE MODEL ---
+    scan_source = Column(String(20), nullable=False, default="manual")
+    
     data_type = Column(String)
     search_data = Column(String)
     custom_regex = Column(String, nullable=True)
     status = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # When a ScanJob is deleted, all of its children (results and tool_statuses)
-    # will also be deleted automatically by the database because of the cascade rule.
     results = relationship("ScanResult", back_populates="job", cascade="all, delete-orphan")
     tool_statuses = relationship("ToolStatus", back_populates="job", cascade="all, delete-orphan")
     
-
+    # --- 2. UPDATE THE CREATE METHOD SIGNATURE AND LOGIC ---
     @classmethod
-    def create(cls, data_type, search_data, custom_regex, status, created_at):
+    def create(cls, data_type, search_data, custom_regex, status, created_at, scan_source="manual"):
         db = SessionLocal()
         try:
             job = cls(
+                scan_source=scan_source, # Add the new field here
                 data_type=data_type,
                 search_data=search_data,
                 custom_regex=custom_regex,

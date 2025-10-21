@@ -210,6 +210,13 @@ backend_data_type_map = {
     "IP Address": "ip"
 }
 display_name_map = {v: k for k, v in backend_data_type_map.items()}
+regex_patterns = {
+                    "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                    "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
+                    "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+                    "IC Number": r"^\d{6}-\d{2}-\d{4}$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
+                }
 
 # --- HELPER FUNCTION TO PARSE SPIDERFOOT DATA ---
 def parse_spiderfoot_account(raw_data_string: str) -> dict:
@@ -283,50 +290,73 @@ RECOMMENDATION_MAP = {
 # --- NEW HELPER FUNCTION TO GET PLAYBOOK TEXT ---
 def get_playbook_for_scan(scan_type: str) -> dict:
     """
-    Returns the contextual risk and actionable playbook text for a given scan type.
+    Returns the contextual risk and actionable playbook text for a given scan type,
+    written in simple, non-technical language for the general public.
     """
     playbooks = {
         "email": {
-            "risk": """This is a CRITICAL risk. Your email and other personal details from these breaches are likely available to hackers. They can use this information to:
-- Take Over Your Accounts: If you reused the password from a breached site, they can access your other accounts.
-- Send Targeted Phishing Scams: They can create very believable scam emails to trick you into giving away more information.
-- Commit Identity Theft: With enough personal data, criminals can try to open new accounts or commit fraud in your name.""",
-            "playbook": """Follow these steps immediately:
-1. Change Your Passwords: Go to the websites listed in the breaches and change your password right away.
-2. Change Passwords Everywhere Else: If you used the same password on other websites, change them too.
-3. Enable Two-Factor Authentication (2FA): This is your best defense. Turn it on for all important accounts.
-4. Be Vigilant: Be extra suspicious of any unexpected emails asking you to click links or download attachments."""
+            "risk": """Your email address is like the master key to your digital life. When it appears in a data breach, hackers get access to both your email and the password you used on that site. They use this to:
+- Break Into Other Accounts: If you reuse passwords, they will try the leaked password on your email, banking, and social media accounts.
+- Send Convincing Scams: They can create targeted scam emails (phishing) that look real, tricking you into revealing more sensitive information.
+- Attempt Identity Theft: With enough information, they can try to impersonate you.""",
+            "playbook": """Follow these steps immediately to protect yourself:
+1. Change Your Passwords Now: Go to the websites listed in the breach and change your password. Most importantly, if you used that same password anywhere else, change it there too.
+2. Enable Extra Security (2FA): Turn on "Two-Factor Authentication" (also called 2FA or MFA) for your important accounts, especially your email. This sends a unique code to your phone when you log in, stopping a hacker even if they have your password.
+3. Use a Password Manager: Consider using a password manager (like Bitwarden or 1Password). These tools create and remember a unique, strong password for every site, so you don't have to."""
         },
         "password": {
-            "risk": """This is a CRITICAL risk. DO NOT USE THIS PASSWORD. It is publicly known and is on lists used by hackers. Using this password for any account is like leaving your front door wide open.
-- Attackers will use this password to try and log into your email, bank, and social media accounts (credential stuffing).
-- If they get into one account, they will use it to try and reset your passwords for other accounts.""",
-            "playbook": """1. Stop Using This Password Immediately: Identify every single online account where you are currently using this password.
-2. Change Your Passwords: Change your password on each of those sites to a new, unique, and strong one.
-3. Use a Password Manager: This is the best way to manage unique passwords. A password manager is a secure app that creates and remembers strong passwords for you. Popular options include Bitwarden and 1Password.
-4. Enable Two-Factor Authentication (2FA): Turn on 2FA everywhere possible for an extra layer of security."""
+            "risk": """This password is no longer safe. It has been exposed in a data breach and is now on public lists used by hackers. Using this password for any account is like leaving your front door wide open.
+- Automated Attacks: Hackers will use this password in automated attacks to try and log into thousands of popular websites, hoping to find one of your accounts.
+- Account Takeover: If they get into one account, they will try to use it to reset the passwords for your other, more important accounts.""",
+            "playbook": """Take these steps immediately for any account using this password:
+1. Stop Using This Password: Change this password immediately on every single website and app where you currently use it.
+2. Create New, Unique Passwords: Do not just change one character. Each account needs its own completely different, strong password.
+3. Get a Password Manager: This is the best way to manage unique passwords. A password manager is a secure app that creates and remembers strong passwords for you, so you only need to remember one master password.
+4. Turn On Extra Security (2FA): Enable "Two-Factor Authentication" wherever you can. It's your best defense against password leaks."""
         },
         "phone": {
-            "risk": """Having your phone number or IC number publicly exposed is a HIGH risk. Scammers and identity thieves actively search for this information to:
-- Target You with Scams: You may receive an increase in spam calls and phishing text messages.
-- Commit Identity Theft: Your IC number is a key piece of information used to impersonate you.
-- Hijack Your Accounts: An attacker could use your phone number for account recovery (a "SIM-swap" attack, where they move your number to their phone).""",
-            "playbook": """1. Investigate the Source: Review the links found to understand why your information is public.
-2. Request Takedown: Contact the website's administrator and formally request that they remove your personal information.
-3. Remove it Yourself: If it's a post you made on social media or a forum, log in and delete it immediately.
-4. Be Extra Cautious: Be wary of unsolicited calls or texts. Never give out personal information or one-time codes (OTPs)."""
+            "risk": """Having your phone number or IC number public is a high risk. Scammers and identity thieves specifically look for this information to:
+- Target You with Scams: Expect an increase in spam calls and scam text messages designed to trick you.
+- Impersonate You: Your IC number is a core piece of your identity and can be used to open fraudulent accounts in your name.
+- Hijack Your Phone Number: Criminals can try to trick your mobile provider into moving your number to their phone. This lets them intercept your calls, messages, and security codes.""",
+            "playbook": """Here is how to handle this exposure:
+1. Investigate the Source: Look at the websites listed in the findings to understand why your information is public.
+2. Request Removal: Contact the website's administrator and ask them to remove your personal information.
+3. Delete it Yourself: If it's a post you made on social media or a forum, log in and delete it immediately.
+4. Be Extra Cautious: Be very suspicious of unexpected calls or texts. Never give out personal details or one-time security codes that are sent to you."""
         },
         "github_repo": {
-            "risk": """An exposed secret in a GitHub repository is a CRITICAL risk. It's like leaving the master key to your house on the street. An attacker can use this key to:
-- Access and Steal Your Data: Read, modify, or delete information from the associated service.
-- Impersonate You: Perform actions on your behalf without your knowledge.
-- Incur Financial Costs: If the key is for a cloud service (like AWS), an attacker can use it to run expensive services, leaving you with a massive bill.""",
+            "risk": """An exposed "secret" (like an API key) in a public code repository is a critical risk. It's like leaving the key to your office or cloud services lying on the street for anyone to pick up and use. An attacker can:
+- Steal Your Data: Access, change, or delete information from the service the key belongs to.
+- Impersonate You: Take actions on your behalf without your knowledge.
+- Run Up Huge Bills: If the key is for a cloud service (like AWS or Google Cloud), an attacker can use it to run expensive operations, leaving you with a massive bill.""",
             "playbook": """Act IMMEDIATELY. Every second counts.
-1. Identify the Leaked Key: Determine which key was exposed and what service it belongs to.
-2. Revoke the Key: Log into the service's dashboard and revoke or delete the compromised key. This is the most critical step.
-3. Generate a New Key: Create a new, replacement key.
-4. Remove from History: Remove the secret from the file and then use a tool to erase it from the entire Git history. A simple commit is not enough. (Note: Revoking the key is the most important step).
-5. Update Your Applications: Replace the old, revoked key with the new one in all your applications."""
+1. Disable the Leaked Key (Most Important Step): Log into the dashboard of the service the key belongs to and immediately revoke or delete it. This makes the leaked key useless.
+2. Generate a New Key: Create a new, replacement key to be used safely.
+3. Update Your Applications: Replace the old, revoked key with the new one in all your applications.
+4. Remove From History: Simply deleting the key from your code isn't enough, as it remains in the project's history. You must use a specialized tool to permanently erase it from all past versions."""
+        },
+        "username": {
+            "risk": """Finding your username on many sites reveals your "digital footprint." Scammers can look at your different public profiles to piece together information about you (your hobbies, location, friends). They use this to:
+- Create Personalized Scams: They can craft very convincing fake emails or messages that you are more likely to trust.
+- Guess Security Questions: They can try to use details from your profiles to answer security questions and break into more sensitive accounts.""",
+            "playbook": """Follow these steps to manage your digital footprint:
+1. Review Your Public Profiles: Click on the links found and look at them as if you were a stranger. What can they learn about you?
+2. Remove Sensitive Details: Go through your profiles and remove personal information you don't want the public to see, like your phone number, full birthdate, or home address.
+3. Tighten Your Privacy Settings: On each website, go into the account settings and change who can see your posts and personal information from "Public" to "Friends Only" or "Private."""
+        },
+        "domain": {
+            "risk": """The main risk for a domain owner is having your personal contact information (name, address, email) publicly listed in the ownership record (called a WHOIS record). This is like having your personal details in a phone book for the whole world to see, making you a target for spam and scams.""",
+            "playbook": """Here is how you can protect your privacy:
+1. Enable WHOIS Privacy (Most Important Step): Contact the company where you bought your domain name (your "Registrar") and ask them to turn on "WHOIS Privacy" or "Domain Privacy Protection." Most providers offer this to hide your personal details from the public record.
+2. Review Technical Settings: The other information found is usually technical. You only need to check these settings if your website or email is not working properly."""
+        },
+        "ip": {
+            "risk": """An IP address is your computer's or network's public address on the internet. The report can show "open doors" (or "ports") that are visible to the public. Each open door is a potential way for attackers to get into your network. If your IP address gets a bad reputation, other websites might block you.""",
+            "playbook": """Follow these steps to secure your network:
+1. Close Unnecessary "Doors": The report may list open services. Any service you don't recognize or need for public access should be closed. This is usually done in the security or "firewall" settings of your internet router.
+2. Secure What's Left: For any services that must remain public (like a web server for a website), make sure the software is always fully updated and protected with strong passwords.
+3. Investigate a Bad Reputation: If the report shows your IP has a bad reputation, it often means a device on your network (like a computer or phone) has a virus. Run antivirus scans on all your devices."""
         }
     }
     # For "ic", the playbook is the same as for "phone"
@@ -344,13 +374,11 @@ def safe_filename(text: str, max_len: int = 60) -> str:
         text = "report"
     return (text[:max_len])  # keep it short; browsers don’t need full URL here
 
-# --- FULLY REVISED AND ENHANCED PDF GENERATION FUNCTION ---
-# --- FINAL, FULLY ENHANCED, AND STABLE PDF GENERATION FUNCTION (WITH TABLE FIX) ---
+# --- PDF GENERATION FUNCTION ---
 def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     """
     Generates a robust and visually appealing PDF report for a single scan job.
-    This version includes the definitive fix for the table layout corruption by
-    correctly calculating variable row heights.
+    This version includes renderers for all supported data types.
     """
     
     pdf = FPDF()
@@ -414,107 +442,153 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     results = scan.get("results", {})
     scan_type = scan['data_type']
 
-    has_findings = any(isinstance(res.get("data"), list) and res["data"] for res in results.values() if isinstance(res, dict))
+    has_findings = any(
+        (isinstance(res.get("data"), list) and res["data"]) or 
+        (isinstance(res.get("data"), dict) and res["data"]) 
+        for res in results.values() if isinstance(res, dict)
+    )
     
     if not has_findings:
         pdf.set_font("Helvetica", "", 10)
         pdf.multi_cell(0, 7, "  No specific leaks or exposures were found in this scan.")
         pdf.ln(5)
 
-    # TruffleHog Renderer (Stable)
+    # --- START OF COMPREHENSIVE RENDERERS ---
+
+    # TruffleHog Renderer (github_repo)
     trufflehog_result = results.get('trufflehog', {})
-    if isinstance(trufflehog_result, dict) and isinstance(trufflehog_result.get("data"), list):
+    if isinstance(trufflehog_result, dict) and isinstance(trufflehog_result.get("data"), list) and trufflehog_result["data"]:
         findings = trufflehog_result["data"]
-        if findings:
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(0, 8, f"-> Secret Leak Scan (TruffleHog)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 5, f"  Summary: Found {len(findings)} potential secret(s) exposed in the code.")
-            pdf.ln(3)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(45, 7, "Secret Type", 1, align="C")
-            pdf.cell(110, 7, "File Location", 1, align="C")
-            pdf.cell(20, 7, "Line #", 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", "", 8)
-            for finding in findings[:10]:
-                metadata = finding.get("SourceMetadata", {}).get("Data", {}).get("Github", {})
-                detector = finding.get('DetectorName', 'N/A')
-                file = metadata.get('file', 'N/A')
-                line = metadata.get('line', 'N/A')
-                display_detector = detector if len(detector) < 25 else detector[:22] + "..."
-                display_file = file if len(file) < 70 else "..." + file[-67:]
-                pdf.cell(45, 6, display_detector, 1)
-                pdf.cell(110, 6, display_file, 1)
-                pdf.cell(20, 6, str(line), 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.ln(8)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Secret Leak Scan (TruffleHog)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, f"  Summary: Found {len(findings)} potential secret(s) exposed in the code.")
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(45, 7, "Secret Type", 1, align="C")
+        pdf.cell(110, 7, "File Location", 1, align="C")
+        pdf.cell(20, 7, "Line #", 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 8)
+        for finding in findings[:10]:
+            metadata = finding.get("SourceMetadata", {}).get("Data", {}).get("Github", {})
+            detector, file, line = finding.get('DetectorName', 'N/A'), metadata.get('file', 'N/A'), metadata.get('line', 'N/A')
+            display_detector = detector[:22] + "..." if len(detector) > 25 else detector
+            display_file = "..." + file[-67:] if len(file) > 70 else file
+            pdf.cell(45, 6, display_detector, 1)
+            pdf.cell(110, 6, display_file, 1)
+            pdf.cell(20, 6, str(line), 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(8)
 
-    # --- HIBP (Email Breaches) Renderer - CORRECTED TABLE LOGIC ---
+    # HIBP (Email Breaches) Renderer
     hibp_result = results.get('hibp_emails', {})
-    if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list):
+    if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list) and hibp_result["data"]:
         breaches = hibp_result["data"]
-        if breaches:
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(0, 8, f"-> Email Breach Check (Have I Been Pwned)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 5, f"  Summary: This email was found in {len(breaches)} public data breaches.")
-            pdf.ln(3)
-            
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(65, 7, "Breach Name", 1, align="C")
-            pdf.cell(110, 7, "Types of Data Compromised", 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            
-            pdf.set_font("Helvetica", "", 8)
-            for breach in breaches[:10]:
-                name = breach.get("Name", "N/A")
-                data_classes = ", ".join(breach.get("DataClasses", []))
-                display_name = name if len(name) < 40 else name[:37] + "..."
-                display_data = data_classes if len(data_classes) < 75 else data_classes[:72] + "..."
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Email Breach Check (Have I Been Pwned)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, f"  Summary: This email was found in {len(breaches)} public data breaches.")
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(65, 7, "Breach Name", 1, align="C")
+        pdf.cell(110, 7, "Types of Data Compromised", 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 8)
+        for breach in breaches[:10]:
+            name, data_classes = breach.get("Name", "N/A"), ", ".join(breach.get("DataClasses", []))
+            display_name = name[:37] + "..." if len(name) > 40 else name
+            display_data = data_classes[:72] + "..." if len(data_classes) > 75 else data_classes
+            start_y = pdf.get_y()
+            pdf.multi_cell(65, 6, display_name, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
+            y_after_left = pdf.get_y()
+            pdf.set_xy(pdf.get_x(), start_y)
+            pdf.multi_cell(110, 6, display_data, border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            y_after_right = pdf.get_y()
+            pdf.set_y(max(y_after_left, y_after_right))
+        pdf.ln(8)
 
-                # --- START OF THE FIX ---
-                start_y = pdf.get_y()
-                
-                # Draw the left cell
-                pdf.multi_cell(65, 6, display_name, border=1, new_x=XPos.RIGHT, new_y=YPos.TOP)
-                
-                # Store the Y position after drawing the potentially multi-line left cell
-                y_after_left = pdf.get_y()
-                
-                # Reset Y to the start of the row and move X for the right cell
-                pdf.set_xy(pdf.get_x(), start_y)
-                
-                # Draw the right cell
-                pdf.multi_cell(110, 6, display_data, border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                
-                # Store the Y position after drawing the potentially multi-line right cell
-                y_after_right = pdf.get_y()
-                
-                # Set the final Y position to the bottom of whichever cell was taller
-                pdf.set_y(max(y_after_left, y_after_right))
-                # --- END OF THE FIX ---
-
-            pdf.ln(8)
-
-    # Sherlock (Usernames) Renderer (Stable)
+    # Sherlock (Usernames) Renderer
     sherlock_result = results.get('sherlock', {})
-    if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list):
+    if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list) and sherlock_result["data"]:
         urls = sherlock_result["data"]
-        if urls:
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(0, 8, f"-> Username & Social Media Scan (Sherlock)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 5, f"  Summary: Found {len(urls)} social media or forum profiles with this username.")
-            pdf.ln(4)
-            for url in urls[:10]:
-                ext = tldextract.extract(url)
-                platform = ext.domain.capitalize()
-                pdf.set_font("Helvetica", "B", 9)
-                pdf.multi_cell(0, 5, f"  - Platform: {platform}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.set_font("Helvetica", "", 8)
-                pdf.multi_cell(0, 5, f"    URL: {url}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.ln(2)
-            pdf.ln(8)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Username & Social Media Scan (Sherlock)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, f"  Summary: Found {len(urls)} social media or forum profiles with this username.")
+        pdf.ln(4)
+        for url in urls[:10]:
+            platform = tldextract.extract(url).domain.capitalize()
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.multi_cell(0, 5, f"  - Platform: {platform}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 5, f"    URL: {url}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+        pdf.ln(8)
 
-    # --- 4. Actionable Recommendations Page (Styled and Stable) ---
+    # Google Dork (Phone/IC) Renderer
+    google_result = results.get('google_dork', {})
+    if isinstance(google_result, dict) and isinstance(google_result.get("data"), list) and google_result["data"]:
+        findings = google_result["data"]
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Public Web Scan (Google)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, f"  Summary: Found {len(findings)} public source(s) mentioning this data.")
+        pdf.ln(4)
+        for finding in findings[:10]:
+            source_url = finding.get('source_url', 'N/A')
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.multi_cell(0, 5, "  - Source URL:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 5, f"    {source_url}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+        pdf.ln(8)
+
+    # HIBP (Passwords) Renderer
+    hibp_pass_result = results.get('hibp_passwords', {})
+    if isinstance(hibp_pass_result, dict) and isinstance(hibp_pass_result.get("data"), dict) and hibp_pass_result["data"]:
+        data = hibp_pass_result["data"]
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Password Breach Check (HIBP)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if data.get("pwned"):
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(198, 40, 40)
+            pdf.multi_cell(0, 5, f"  Status: UNSAFE. This password was found {data.get('count', 0):,} times in public data breaches.")
+        else:
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(46, 125, 50)
+            pdf.multi_cell(0, 5, "  Status: SAFE. This password was not found in any public data breaches.")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(8)
+
+    # SpiderFoot (Domain/IP) Renderer
+    spiderfoot_result = results.get('spiderfoot', {})
+    if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list) and spiderfoot_result["data"]:
+        sf_data = spiderfoot_result["data"]
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "-> Intelligence Scan (SpiderFoot)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 5, f"  Summary: Found {len(sf_data)} related intelligence items.")
+        pdf.ln(4)
+        
+        # Group similar items for a cleaner report
+        grouped_items = {}
+        for item in sf_data[:15]: # Limit to 15 items
+            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
+            if item_type not in grouped_items:
+                grouped_items[item_type] = []
+            grouped_items[item_type].append(item.get('data', 'N/A'))
+        
+        for item_type, data_list in grouped_items.items():
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.multi_cell(0, 5, f"  - {item_type}:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("Helvetica", "", 8)
+            for data_item in data_list:
+                display_data = data_item[:100] + "..." if len(data_item) > 103 else data_item
+                pdf.multi_cell(0, 5, f"    - {display_data}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+        pdf.ln(8)
+
+    # --- END OF COMPREHENSIVE RENDERERS ---
+
+    # --- 4. Actionable Recommendations Page ---
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, "Actionable Recommendations", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -744,7 +818,7 @@ handle_auth_redirect()
 
 # --- 2. DEFINE PUBLIC AND PRIVATE PAGES ---
 PUBLIC_PAGES = ["Homepage", "Scanner", "Scan History", "About Tools", "FAQ"]
-PRIVATE_PAGES = ["Dashboard", "Reports"]
+PRIVATE_PAGES = ["Dashboard", "Reports", "Monitoring"]
 
 # --- 3. SETUP SIDEBAR AND NAVIGATION (ALWAYS VISIBLE) ---
 with st.sidebar:
@@ -769,8 +843,8 @@ with st.sidebar:
     # --- NAVIGATION MENU ---
     selected = option_menu(
         menu_title=None,
-        options=["Homepage", "Scanner", "Dashboard", "Scan History", "About Tools", "Reports", "FAQ"],
-        icons=["house-door", "search", "bar-chart-line", "clock-history", "tools", "clipboard-data", "question-circle"],
+        options=["Homepage", "Scanner", "Dashboard", "Scan History", "Monitoring", "About Tools", "Reports", "FAQ"],
+        icons=["house-door", "search", "bar-chart-line", "clock-history", "bell", "tools", "clipboard-data", "question-circle"],
         default_index=0,
         styles={
             "container": {"padding": "0 !important", "background-color": "transparent"},
@@ -863,13 +937,7 @@ else:
         # This part remains unchanged and will now work correctly.
         if scan_button:
             if search_data:
-                regex_patterns = {
-                    "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                    "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
-                    "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-                    "IC Number": r"^\d{6}-\d{2}-\d{4}$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
-                }
+                pattern = regex_patterns[data_type] 
                 backend_data_type = backend_data_type_map[data_type]
                 pattern = regex_patterns[data_type]
                 if not re.search(pattern, search_data.strip()):
@@ -1027,7 +1095,15 @@ else:
 
                 for scan in scans:
                     display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
-                    expander_title = f"Scan ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
+                    icon = "👤" 
+                    source_text = "Manual Scan"
+                    
+                    # Check if the scan source is automated and update the icon/text
+                    if scan.get('scan_source') == 'automated':
+                        icon = "🤖"
+                        source_text = "Automated Scan"
+                    
+                    expander_title = f"{icon} {source_text} | ID: {scan['scan_id']} | Type: {display_data_type} | Data: '{scan['search_data']}'"
                     
                     with st.expander(expander_title, expanded=False):
                         # --- Timestamp and Status ---
@@ -1478,7 +1554,6 @@ else:
             st.error(f"❌ An error occurred while processing scan history: {e}", icon="🔥")
 
 
-
     # --- END OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
     elif selected == "About Tools":
         st.header("🛠️ Our OSINT Arsenal")
@@ -1537,6 +1612,7 @@ else:
         with col2:
             st.markdown("**Ethical Scanning:**")
             st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
+
     elif selected == "Reports":
         st.header("📈 Security Reports")
         st.markdown("View comprehensive analysis and generate downloadable reports of your security scans.")
@@ -1552,6 +1628,151 @@ else:
             - **📁 Export Options**: Download reports as PDF or spreadsheets.
             """)
         st.success("🛡️ **Our Goal:** Reports are written in simple language for everyone to understand.")
+
+    elif selected == "Monitoring":
+        st.header("🛡️ Automated Monitoring")
+        st.markdown("Add sensitive data here to have it automatically scanned on a regular schedule. You will be alerted to new findings.")
+
+        # This page is protected, so we know 'user' is in st.session_state
+        user_id = st.session_state['user'].get('sub') # Use 'sub' for a more permanent ID
+
+        if not user_id:
+            st.error("Could not identify user. Please try logging in again.")
+        else:
+            # --- Section for Alerts ---
+            st.subheader("🚨 Recent Alerts")
+            try:
+                alert_res = requests.get(f"http://localhost:8000/monitoring/alerts/{user_id}")
+                if alert_res.status_code == 200:
+                    all_alerts = alert_res.json()
+                    
+                    # Filter for only unread alerts
+                    unread_alerts = [alert for alert in all_alerts if not alert.get('is_read')]
+
+                    # --- FIX 1: Check the correct variable ---
+                    if not unread_alerts:
+                        st.success("No new alerts. Your monitored assets look clear!", icon="✅")
+                    else:
+                        # --- FIX 2: Loop over the correct variable ---
+                        for alert in unread_alerts:
+                            alert_time = datetime.fromisoformat(alert['created_at']).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
+                            formatted_time = alert_time.strftime("%d %b %Y, %I:%M %p")
+                            
+                            col1, col2 = st.columns([4, 1])
+                            
+                            with col1:
+                                st.warning(f"**{formatted_time}:** {alert['message']} (Scan ID: {alert['scan_id']})")
+
+                            with col2:
+                                if st.button("Dismiss", key=f"dismiss_{alert['id']}", use_container_width=True):
+                                    dismiss_res = requests.put(f"http://localhost:8000/monitoring/alerts/{alert['id']}/read")
+                                    if dismiss_res.status_code == 200:
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to dismiss alert.")
+                else:
+                    st.error("Could not fetch alerts.")
+            except Exception as e:
+                st.error(f"Error fetching alerts: {e}")
+
+            st.markdown("---")
+
+            # --- Section to add new assets ---
+            st.subheader("Add New Asset to Monitor")
+            # The form starts here. The logic that uses its variables MUST be inside.
+            with st.form("add_asset_form", clear_on_submit=True):
+                col1, col2 = st.columns(2)
+                with col1:
+                    asset_type_display = st.selectbox(
+                        "Select Data Type",
+                        options=list(backend_data_type_map.keys()),
+                        help="Choose the type of data you want to monitor."
+                    )
+                with col2:
+                    asset_data = st.text_input(
+                        "Enter Data",
+                        help="Enter the email, username, etc., to monitor."
+                    )
+
+                submitted = st.form_submit_button("➕ Add to Monitoring List")
+
+                # --- START OF FIX 1: This logic is now correctly indented ---
+                if submitted:
+                    if asset_data:
+                        # --- START OF NEW VALIDATION LOGIC ---
+                        pattern = regex_patterns[asset_type_display]
+                        if not re.search(pattern, asset_data.strip()):
+                            st.error(f"❌ Input does not match the expected {asset_type_display} format. Please check and try again.", icon="🚨")
+                        else:
+                            # This is the original logic, now nested in the 'else' block
+                            st.success("✅ Input validated. Adding to monitoring list...", icon="👍")
+                            payload = {
+                                "user_id": user_id,
+                                "data_type": backend_data_type_map[asset_type_display],
+                                "search_data": asset_data.strip()
+                            }
+                            try:
+                                response = requests.post("http://localhost:8000/monitoring/assets", json=payload)
+                                if response.status_code == 201:
+                                    st.success(f"Successfully added '{asset_data}' to the monitoring list!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to add asset: {response.text}")
+                            except Exception as e:
+                                st.error(f"An error occurred: {e}")
+                        # --- END OF NEW VALIDATION LOGIC ---
+                    else:
+                        st.warning("Please enter the data to monitor.")
+                    # --- END OF FIX 1 ---
+
+            st.markdown("---")
+
+            # --- Section to display and manage current assets ---
+            st.subheader("Currently Monitored Assets")
+            try:
+                res = requests.get(f"http://localhost:8000/monitoring/assets/{user_id}")
+                if res.status_code == 200:
+                    assets = res.json()
+                    
+                    # --- START OF FIX 2: Added the indented block ---
+                    if not assets:
+                        st.info("You are not currently monitoring any assets.")
+                    else:
+                        for asset in assets:
+                            col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
+                            with col1:
+                                st.write(f"**{display_name_map.get(asset['data_type'], 'Unknown')}**")
+                            with col2:
+                                st.code(asset['search_data'])
+                            with col3:
+                                last_scan = "Never"
+                                if asset.get('last_scanned_at'):
+                                    # 1. Parse the string from the database into a datetime object
+                                    dt_utc = datetime.fromisoformat(asset['last_scanned_at'])
+                                    
+                                    # 2. Tell Python that this datetime is in UTC
+                                    dt_utc = dt_utc.replace(tzinfo=ZoneInfo("UTC"))
+                                    
+                                    # 3. Convert it to your local timezone
+                                    dt_local = dt_utc.astimezone(ZoneInfo("Asia/Kuala_Lumpur"))
+                                    
+                                    # 4. Format the local time for display
+                                    last_scan = dt_local.strftime("%d %b %Y, %I:%M %p")
+
+                                    st.write(f"Last Scanned: {last_scan}")
+                            with col4:
+                                if st.button("Delete", key=f"del_{asset['id']}", use_container_width=True):
+                                    del_res = requests.delete(f"http://localhost:8000/monitoring/assets/{asset['id']}")
+                                    if del_res.status_code == 204:
+                                        st.success("Asset removed.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to remove asset.")
+                    # --- END OF FIX 2 ---
+                else:
+                    st.error("Could not fetch monitored assets.")
+            except Exception as e:
+                st.error(f"Error fetching assets: {e}")
     elif selected == "FAQ":
         st.header("❓ Frequently Asked Questions")
         st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
