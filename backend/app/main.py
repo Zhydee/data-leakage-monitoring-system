@@ -11,6 +11,7 @@ from app.limiter import limiter # Import the new shared limiter
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.utils.cleanup import delete_old_scan_records
 from app.utils.scheduler_jobs import run_automated_scans 
+# --- NEW: STRUCTURED LOGGING IMPORTS ---
 import logging
 from contextlib import asynccontextmanager 
 import asyncio

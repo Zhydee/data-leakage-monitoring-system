@@ -18,6 +18,7 @@ from authlib.integrations.requests_client import OAuth2Session
 from authlib.jose import jwt
 import secrets # Used to generate a secure nonce
 import asyncio
+import threading
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -933,29 +934,38 @@ else:
                     # The submit button is also inside the form
                     scan_button = st.form_submit_button("🚀 Start Comprehensive Scan", use_container_width=True)
 
-        # --- The submission logic block is OUTSIDE all layout elements ---
-        # This part remains unchanged and will now work correctly.
+        # --- The submission logic block ---
         if scan_button:
             if search_data:
-                pattern = regex_patterns[data_type] 
-                backend_data_type = backend_data_type_map[data_type]
+                # 1. Validate the user's input
                 pattern = regex_patterns[data_type]
+                backend_data_type = backend_data_type_map[data_type]
+                
                 if not re.search(pattern, search_data.strip()):
                     st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
                 else:
-                    st.success("✅ Input validated. Initiating scan...", icon="👍")
-                    with st.spinner("🚀 Scanning... This may take a few minutes for public scans."):
-                        payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
+                    # This is the only code that runs after successful validation
+                    
+                    # 2. Define the function that will run in the background
+                    def trigger_scan_in_background(payload):
                         try:
-                            response = requests.post("http://localhost:8000/scan/start", json=payload)
-                            if response.status_code == 200:
-                                result = response.json()
-                                st.success(f"🎉 Scan started successfully! Job ID: `{result['job_id']}`", icon="✅")
-                                st.info("📊 Results will appear in 'Scan History' shortly.", icon="ℹ️")
-                            else:
-                                st.error(f"❌ Scan failed: {response.status_code} - {response.text}", icon="🔥")
+                            # This network request happens on a separate thread and does not block the app
+                            requests.post("http://localhost:8000/scan/start", json=payload, timeout=10)
                         except Exception as e:
-                            st.error(f"❌ Error initiating scan: {str(e)}", icon="🔥")
+                            # Log any errors to the console without disturbing the user
+                            print(f"Error in background scan trigger: {str(e)}")
+
+                    # 3. Prepare the data for the scan
+                    payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
+                    
+                    # 4. Create and start the background thread
+                    scan_thread = threading.Thread(target=trigger_scan_in_background, args=(payload,))
+                    scan_thread.start()
+                    
+                    # 5. Give the user immediate feedback and let them navigate away
+                    st.success("✅ Scan initiated in the background!", icon="🚀")
+                    st.info("You can now navigate to other pages. The results will appear in 'Scan History' when ready.", icon="ℹ️")
+
             else:
                 st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
 
