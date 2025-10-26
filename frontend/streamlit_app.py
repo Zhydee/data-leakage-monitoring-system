@@ -19,6 +19,7 @@ from authlib.jose import jwt
 import secrets # Used to generate a secure nonce
 import asyncio
 import threading
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -41,7 +42,7 @@ session = OAuth2Session(
     redirect_uri="http://localhost:8501",
 )
 
-# --- FINAL, CORRECTED HELPER FUNCTIONS FOR AUTHENTICATION ---
+# --- Helper Function For Authentication ---
 def get_authorization_url():
     """Generates the Auth0 authorization URL."""
     st.session_state['nonce'] = secrets.token_urlsafe(16)
@@ -54,7 +55,7 @@ def get_authorization_url():
         nonce=st.session_state['nonce']
     )
     return authorization_url
-
+# Verified user identity. This is the core proof of authentication.
 def get_user_info(code):
     """Exchanges the authorization code for an access token and decodes the ID token using the public JWKS."""
     token_endpoint = f'https://{AUTH0_DOMAIN}/oauth/token'
@@ -86,8 +87,8 @@ def display_login_prompt():
     st.markdown("Please sign in to view your personalized dashboard and reports.")
     
     auth_url = get_authorization_url()
-    st.link_button("Sign in / Register", auth_url, use_container_width=True)
-
+    st.link_button("Sign in ", auth_url, use_container_width=True)
+# For Authentication
 def handle_auth_redirect():
     """Checks for the auth code in URL params and logs the user in."""
     query_params = st.query_params
@@ -106,7 +107,7 @@ def handle_auth_redirect():
             st.error(f"Error during login: {e}")
             st.error("Please try signing in again.")
 
-# --- PDF Fixes ---
+# --- PDF ---
 def pdf_to_bytes(pdf) -> bytes:
     """
     Works with both FPDF 1.x and fpdf2 2.x.
@@ -125,6 +126,17 @@ def pdf_to_bytes(pdf) -> bytes:
     # Last resort
     return bytes(out)
 
+# --- Footer ---
+def render_footer():
+    """Renders the custom footer."""
+    st.markdown(
+        """
+        <div class="custom-footer">
+            © 2025 Data Leakage Monitoring System | A Final Year Project by M.Zaidi Fahmi. For educational use only.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 st.markdown("""
     <style>
         /* --- General App Styling (Bright Theme) --- */
@@ -150,15 +162,23 @@ st.markdown("""
         h5 { font-size: 1.1rem; }
         /* --- Hide Unwanted Streamlit Elements --- */
         #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
         
+        /* --- Custom Footer Styling --- */
+        .custom-footer {
+            text-align: center;
+            padding: 1.5rem 0;
+            color: #475569; /* A subtle, professional dark gray */
+            font-size: 0.9rem;
+            border-top: 1px solid #E0E0E0; /* A faint line to separate it */
+            margin-top: 2rem;
+        }
         /* --- Sidebar Styling --- */
         [data-testid="stSidebar"] {
             background-color: #E9ECEF;
             border-right: 1px solid #D1D5DB;
         }
         
-        /* --- MODIFICATION: ADDED SELECTOR FOR FORM SUBMIT BUTTON --- */
+        /* --- SELECTOR FOR FORM SUBMIT BUTTON --- */
         .stButton>button, [data-testid="stFormSubmitButton"]>button {
             border: 2px solid #f39c12;
             background-color: #f39c12;
@@ -587,7 +607,6 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
             pdf.ln(2)
         pdf.ln(8)
 
-    # --- END OF COMPREHENSIVE RENDERERS ---
 
     # --- 4. Actionable Recommendations Page ---
     pdf.add_page()
@@ -811,15 +830,14 @@ try:
 except Exception:
     pass # Keep it silent
 
-# --- NEW: UNIFIED APP STRUCTURE ---
 
-# --- 1. AUTHENTICATION HANDLING AT THE TOP ---
+# --- 1. AUTHENTICATION HANDLING ---
 # This runs on every page load to catch the redirect from Auth0
 handle_auth_redirect()
 
 # --- 2. DEFINE PUBLIC AND PRIVATE PAGES ---
 PUBLIC_PAGES = ["Homepage", "Scanner", "Scan History", "About Tools", "FAQ"]
-PRIVATE_PAGES = ["Dashboard", "Reports", "Monitoring"]
+PRIVATE_PAGES = ["Dashboard", "Monitoring"]
 
 # --- 3. SETUP SIDEBAR AND NAVIGATION (ALWAYS VISIBLE) ---
 with st.sidebar:
@@ -836,7 +854,7 @@ with st.sidebar:
         st.header("Welcome, Guest!")
         st.markdown("Sign in to access your personalized dashboard and reports.")
         auth_url = get_authorization_url()
-        st.link_button("Sign in / Register", auth_url, use_container_width=True)
+        st.link_button("Sign in ", auth_url, use_container_width=True)
 
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown("<h1 style='color:#2c3e50; text-align:center; font-size: 1.5rem;'>MENU</h1>", unsafe_allow_html=True)
@@ -844,8 +862,8 @@ with st.sidebar:
     # --- NAVIGATION MENU ---
     selected = option_menu(
         menu_title=None,
-        options=["Homepage", "Scanner", "Dashboard", "Scan History", "Monitoring", "About Tools", "Reports", "FAQ"],
-        icons=["house-door", "search", "bar-chart-line", "clock-history", "bell", "tools", "clipboard-data", "question-circle"],
+        options=["Homepage", "Scanner", "Dashboard", "Scan History", "Monitoring", "About Tools", "FAQ"],
+        icons=["house-door", "search", "bar-chart-line", "clock-history", "bell", "tools", "question-circle"],
         default_index=0,
         styles={
             "container": {"padding": "0 !important", "background-color": "transparent"},
@@ -860,7 +878,7 @@ with st.sidebar:
 
 # --- 4. PAGE ROUTING AND CONTENT RENDERING ---
 
-# --- Check if the selected page is private and if the user is logged out ---
+# --- Check if the selected page is private and if the user is logged out (Authorization)---
 is_private_page = selected in PRIVATE_PAGES
 is_logged_in = 'user' in st.session_state
 
@@ -950,7 +968,7 @@ else:
                     def trigger_scan_in_background(payload):
                         try:
                             # This network request happens on a separate thread and does not block the app
-                            requests.post("http://localhost:8000/scan/start", json=payload, timeout=10)
+                            requests.post("http://localhost:8000/scan/start", json=payload, timeout=50)
                         except Exception as e:
                             # Log any errors to the console without disturbing the user
                             print(f"Error in background scan trigger: {str(e)}")
@@ -964,10 +982,10 @@ else:
                     
                     # 5. Give the user immediate feedback and let them navigate away
                     st.success("✅ Scan initiated in the background!", icon="🚀")
-                    st.info("You can now navigate to other pages. The results will appear in 'Scan History' when ready.", icon="ℹ️")
-
+                    st.info("The results will appear in 'Scan History' when ready.", icon="ℹ️")
             else:
                 st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
+        render_footer()
 
     # --- NEW: SECURITY DASHBOARD PAGE ---
     elif selected == "Dashboard":
@@ -1090,6 +1108,7 @@ else:
                         )
         except Exception as e:
             st.error(f"❌ An error occurred while building the dashboard: {e}", icon="🔥")
+        render_footer() 
 
     # --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
     elif selected == "Scan History":
@@ -1562,6 +1581,7 @@ else:
                 st.error(f"Failed to fetch scan history: Status code {res.status_code}")
         except Exception as e:
             st.error(f"❌ An error occurred while processing scan history: {e}", icon="🔥")
+        render_footer()
 
 
     # --- END OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
@@ -1569,7 +1589,7 @@ else:
         st.header("🛠️ Our OSINT Arsenal")
         st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
         tools_info = {
-            "🐷 TruffleHog": { 
+            "🔑 TruffleHog": { 
                 "purpose": "Scans public GitHub repositories for exposed secrets.", 
                 "scans": ["API Keys & Tokens", "Passwords & Private Keys"] 
             },
@@ -1622,22 +1642,7 @@ else:
         with col2:
             st.markdown("**Ethical Scanning:**")
             st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
-
-    elif selected == "Reports":
-        st.header("📈 Security Reports")
-        st.markdown("View comprehensive analysis and generate downloadable reports of your security scans.")
-        
-        with st.container(border=True):
-            st.info("📊 This feature is under development. Detailed reports will be available here soon.", icon="💡")
-            st.subheader("What You'll Get:")
-            st.markdown("""
-            - **📋 Summary Report**: An easy-to-understand overview of all findings.
-            - **🔍 Detailed Analysis**: A complete breakdown of each security check.
-            - **🚨 Risk Assessment**: Clear explanations of what the findings mean for you.
-            - **💡 Actionable Recommendations**: Simple steps to improve your digital safety.
-            - **📁 Export Options**: Download reports as PDF or spreadsheets.
-            """)
-        st.success("🛡️ **Our Goal:** Reports are written in simple language for everyone to understand.")
+        render_footer()
 
     elif selected == "Monitoring":
         st.header("🛡️ Automated Monitoring")
@@ -1706,10 +1711,10 @@ else:
 
                 submitted = st.form_submit_button("➕ Add to Monitoring List")
 
-                # --- START OF FIX 1: This logic is now correctly indented ---
+                # --- Code snippet for Accountability ---
                 if submitted:
                     if asset_data:
-                        # --- START OF NEW VALIDATION LOGIC ---
+
                         pattern = regex_patterns[asset_type_display]
                         if not re.search(pattern, asset_data.strip()):
                             st.error(f"❌ Input does not match the expected {asset_type_display} format. Please check and try again.", icon="🚨")
@@ -1730,10 +1735,9 @@ else:
                                     st.error(f"Failed to add asset: {response.text}")
                             except Exception as e:
                                 st.error(f"An error occurred: {e}")
-                        # --- END OF NEW VALIDATION LOGIC ---
                     else:
                         st.warning("Please enter the data to monitor.")
-                    # --- END OF FIX 1 ---
+                   
 
             st.markdown("---")
 
@@ -1783,6 +1787,8 @@ else:
                     st.error("Could not fetch monitored assets.")
             except Exception as e:
                 st.error(f"Error fetching assets: {e}")
+        render_footer() 
+
     elif selected == "FAQ":
         st.header("❓ Frequently Asked Questions")
         st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
@@ -1840,6 +1846,8 @@ else:
             st.markdown("Some scans, especially for general data types like API keys, require searching vast sources like all of public GitHub. This can naturally take several minutes. Scans for more specific data types, like checking a password against a breach list, are usually much faster.")
         with st.expander("**What do I do if a tool returns an error?**"):
             st.markdown("Occasionally, a third-party service that a tool relies on may be temporarily unavailable. If you receive an error, we recommend waiting a few minutes and trying the scan again. If the problem persists, it may be an issue with the specific open-source tool itself.")
+        render_footer() 
+
     elif selected == "Homepage":
         st.markdown("""
             <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 1.5rem; margin-bottom:1rem;'>
@@ -1855,7 +1863,7 @@ else:
                 st.markdown("#### Ready to secure your digital footprint?")
                 st.markdown("Sign in to access your private dashboard, view detailed reports, and manage your scan history.")
                 auth_url = get_authorization_url()
-                st.link_button("Sign in to Continue", auth_url, use_container_width=True)
+                st.link_button("Sign in ", auth_url, use_container_width=True)
             st.markdown("---")
         # --- END OF NEW SECTION ---
 
@@ -1953,11 +1961,14 @@ else:
         st.subheader("🛠️ Powered by Leading Open-Source Tools")
         st.markdown("""
         Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:
-        - **🐷 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
-        - **🕵️ Sherlock:** Hunts for your username across over 400 social media sites and online communities.
-        - **📧 HIBP API:** Checks if your email address or password has appeared in thousands of known public data breaches.
-        - **🕷️ SpiderFoot & theHarvester:** Gathers public intelligence on domains and IPs to map your digital footprint.
+        - **🔑 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
+        - **🕵️ Sherlock:** Hunts for your username across hundreds of social media sites and online communities.
+        - **📧 HIBP API:** Checks if your email or password has appeared in thousands of known public data breaches.
+        - **🕷️ SpiderFoot:** Gathers public intelligence on domains and IPs to map your digital footprint.
+        - **🌐 Google Custom Search:** Uses targeted queries to find sensitive information exposed on the public web.
         """)
+        
         st.markdown("---")
         
-        st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive data. All scans are conducted ethically using only publicly available information.")
+        st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive inputs. All scans are conducted ethically on publicly available data only.")
+        render_footer()

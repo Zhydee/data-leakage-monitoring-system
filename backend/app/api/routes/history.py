@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.database import SessionLocal
 from app.models.models import ScanJob, ScanResult
-from app.schemas.history import ScanHistoryItem  # <-- IMPORT THE SCHEMA YOU CREATED
+from app.schemas.history import ScanHistoryItem  
 from typing import List
+from app.cache import cache 
 
 router = APIRouter()
+CACHE_KEY_SCAN_HISTORY = "scan_history"
 
 def get_db():
     db = SessionLocal()
@@ -14,9 +16,11 @@ def get_db():
     finally:
         db.close()
 
-# This decorator now enforces that the output matches your schema
+# This decorator now enforces that the output matches the schema
 @router.get("/scan-history", response_model=List[ScanHistoryItem])
 def get_scan_history(db: Session = Depends(get_db)):
+    if CACHE_KEY_SCAN_HISTORY in cache:
+        return cache[CACHE_KEY_SCAN_HISTORY]
     # This query efficiently fetches jobs and their related results in one go
     jobs = db.query(ScanJob).options(
         joinedload(ScanJob.results)
@@ -42,5 +46,5 @@ def get_scan_history(db: Session = Depends(get_db)):
             }
         }
         history.append(job_data)
-
+    cache[CACHE_KEY_SCAN_HISTORY] = history
     return history

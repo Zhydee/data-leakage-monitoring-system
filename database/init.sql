@@ -37,17 +37,36 @@ CREATE TABLE tool_status (
     results_count INTEGER DEFAULT 0
 );
 
+CREATE TABLE monitored_assets (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR NOT NULL,
+    data_type VARCHAR NOT NULL,
+    search_data VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_scanned_at TIMESTAMP,
+    previous_results_hash VARCHAR
+);
+
+CREATE TABLE alerts (
+    id SERIAL PRIMARY KEY,
+    asset_id INTEGER REFERENCES monitored_assets(id) ON DELETE CASCADE,
+    user_id VARCHAR NOT NULL,
+    scan_id INTEGER REFERENCES scan_jobs(id) ON DELETE SET NULL,
+    message VARCHAR NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better performance
-CREATE INDEX idx_scan_jobs_user_id ON scan_jobs(user_id);
+CREATE INDEX idx_scan_jobs_asset_id ON scan_jobs(asset_id);
 CREATE INDEX idx_scan_jobs_status ON scan_jobs(status);
 CREATE INDEX idx_scan_results_job_id ON scan_results(job_id);
-CREATE INDEX idx_scan_results_tool_name ON scan_results(tool_name);
 CREATE INDEX idx_tool_status_job_id ON tool_status(job_id);
+CREATE INDEX idx_alerts_asset_id ON alerts(asset_id);
 
 -- Insert sample data (optional for testing)
-INSERT INTO users (username, email, password_hash) VALUES 
-('testuser', 'test@example.com', '$2b$12$dummy_hash_for_testing'),
-('admin', 'admin@example.com', '$2b$12$dummy_hash_for_testing');
+INSERT INTO monitored_assets (user_id, data_type, search_data)
+VALUES ('testuser', 'email', 'user@example.com');
 
 -- Display created tables
 \dt

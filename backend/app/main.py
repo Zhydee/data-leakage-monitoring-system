@@ -1,3 +1,5 @@
+# --- START OF FILE main.py ---
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -14,6 +16,7 @@ from app.utils.scheduler_jobs import run_automated_scans
 # --- NEW: STRUCTURED LOGGING IMPORTS ---
 import logging
 from contextlib import asynccontextmanager 
+from cachetools import TTLCache
 import asyncio
 
 from app.api.routes import scan # Import the scan router
@@ -29,16 +32,19 @@ logger = logging.getLogger(__name__)
 # --- Initialize the scheduler ---
 scheduler = AsyncIOScheduler()
 
-# --- A function to start the scheduler and add the job ---
+# Cache up to 1024 items, with each item expiring after 60 seconds
+cache = TTLCache(maxsize=1024, ttl=60)
+
+# --- A function to start the scheduler (Confidentiality) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Handles application startup and shutdown events.
     """
     logger.info("Starting up the application...")
-    # Schedule the cleanup job to run once every day at 3:00 AM server time
+    # Schedule the cleanup job to run once every day 
     scheduler.add_job(delete_old_scan_records, 'interval', days=1, id="daily_cleanup_job")
-    # --- NEW: Schedule the automated scanning job to run every 6 hours ---
+    # --- Schedule the automated scanning job to run every 12 hours ---
     scheduler.add_job(run_automated_scans, 'interval', hours=12, id="automated_scanning_job")
     scheduler.start()
     logger.info("Scheduler started. Cleanup and Automated Scanning jobs have been scheduled.")
@@ -170,7 +176,3 @@ async def get_available_tools():
             }
         }
     }
-
-
-
-app.include_router(scan.router, prefix="/scan") 

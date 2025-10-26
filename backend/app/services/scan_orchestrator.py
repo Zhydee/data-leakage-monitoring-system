@@ -41,7 +41,7 @@ def start_scan_job(request: ScanRequest, scan_source: str = "manual") -> int:
         if not re.match(pattern, request.search_data):
             logging.warning(f"Pattern did not match: {request.search_data}")
             return None
-
+        # --- SQL Injection Prevention ---
         logging.info("Creating ScanJob in the database...")
         scan_job = models.ScanJob.create(
             data_type=data_type, search_data=request.search_data, custom_regex=request.custom_regex,

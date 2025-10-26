@@ -99,7 +99,7 @@ async def run_automated_scans():
             
             try:
                 # This part is the same: it runs the scan using its own internal sessions
-                scan_id = await start_scan_job(scan_request, scan_source="automated")
+                scan_id = start_scan_job(scan_request, scan_source="automated")
                 
                 if not scan_id:
                     logger.error(f"SCHEDULER: Scan failed to start for asset {asset.id}, likely invalid input. Skipping.")
