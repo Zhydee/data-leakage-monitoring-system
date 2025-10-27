@@ -56,6 +56,7 @@ def get_authorization_url():
     )
     return authorization_url
 # Verified user identity. This is the core proof of authentication.
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_user_info(code):
     """Exchanges the authorization code for an access token and decodes the ID token using the public JWKS."""
     token_endpoint = f'https://{AUTH0_DOMAIN}/oauth/token'
@@ -125,7 +126,22 @@ def pdf_to_bytes(pdf) -> bytes:
         return out.encode("latin-1")
     # Last resort
     return bytes(out)
-
+# --- Caching---
+@st.cache_data(ttl=60, show_spinner=False) # Cache the result for 60 seconds
+def get_scan_history():
+    """Fetches and caches the scan history from the backend."""
+    try:
+        res = requests.get("http://localhost:8000/scan-history")
+        if res.status_code == 200:
+            return res.json()
+        else:
+            # Display an error in the app if fetching fails
+            st.error(f"Failed to fetch scan data: Status code {res.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"❌ An error occurred while fetching scan history: {e}", icon="🔥")
+        return None
+    
 # --- Footer ---
 def render_footer():
     """Renders the custom footer."""
@@ -731,6 +747,11 @@ def calculate_overall_severity(scan_type: str, results: dict) -> str | None:
         spiderfoot_result = results.get('spiderfoot', {})
         if isinstance(spiderfoot_result, dict) and spiderfoot_result.get("data"):
             return "LOW"
+        
+    if scan_type in ('domain', 'ip'):
+        spiderfoot_result = results.get('spiderfoot', {})
+        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list) and spiderfoot_result["data"]:
+            return "LOW"
 
     return None
 # --- Google Custom Search (Google Dork) friendly display ---
@@ -992,15 +1013,15 @@ else:
         st.header("📈 Security Dashboard")
         st.markdown("A high-level, aggregated, and visual overview of your overall security risk based on all historical scans.")
 
-        try:
-            res = requests.get("http://localhost:8000/scan-history")
-            if res.status_code != 200:
-                st.error(f"Failed to fetch scan data: Status code {res.status_code}")
+        with st.spinner("Loading dashboard..."):
+            scans = get_scan_history() # Use the cached function
+
+            if scans is None:
+                # Error is already displayed by the function, so we do nothing.
+                pass
+            elif not scans:
+                st.info("No scan history found. Run a scan from the 'Scanner' page to build your dashboard.", icon="ℹ️")
             else:
-                scans = res.json()
-                if not scans:
-                    st.info("No scan history found. Run a scan from the 'Scanner' page to build your dashboard.", icon="ℹ️")
-                else:
                     # --- A. EXECUTIVE SUMMARY DASHBOARD ---
                     st.subheader("Executive Summary")
 
@@ -1106,8 +1127,6 @@ else:
                             use_container_width=True,
                             hide_index=True
                         )
-        except Exception as e:
-            st.error(f"❌ An error occurred while building the dashboard: {e}", icon="🔥")
         render_footer() 
 
     # --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
@@ -1115,12 +1134,15 @@ else:
         st.header("📊 Scan History")
         st.markdown("Review the enriched findings from your recent scans. Results from multiple tools are combined for better insights.")
         
-        try:
-            res = requests.get("http://localhost:8000/scan-history")
-            if res.status_code == 200:
-                scans = res.json()
-                if not scans:
-                    st.info("No scan history found. Run a scan from the 'Scanner' page to see results here.", icon="ℹ️")
+        with st.spinner("Loading scan history..."):
+            scans = get_scan_history() # Use the cached function we created earlier
+
+            if scans is None:
+                # The function already showed an error, so we do nothing here.
+                pass
+            elif not scans:
+                st.info("No scan history found. Run a scan from the 'Scanner' page to see results here.", icon="ℹ️")
+            else:
 
                 for scan in scans:
                     display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
@@ -1377,6 +1399,27 @@ else:
                                             for item in dns_results:
                                                 readable_type = item.get('type', 'N/A').replace('_', ' ').title()
                                                 st.markdown(f"**{readable_type}:** `{item.get('data', 'N/A')}`")
+                                # NEW: Catch-all for other unhandled DNS/intel results
+                                other_results = [
+                                    r for r in spiderfoot_data 
+                                    if r.get('module') not in ['sfp_whois', 'sfp_dns', 'sfp_dnsresolve']
+                                ]
+                                if other_results:
+                                    with st.container(border=True):
+                                        st.markdown("<h5>📝 Other Intelligence Findings</h5>", unsafe_allow_html=True)
+                                        # Group remaining items for a clean display
+                                        grouped_items = {}
+                                        for item in other_results:
+                                            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
+                                            if item_type not in grouped_items:
+                                                grouped_items[item_type] = []
+                                            grouped_items[item_type].append(item.get('data', 'N/A'))
+                                        
+                                        for item_type, data_list in sorted(grouped_items.items()):
+                                            st.markdown(f"**{item_type}** ({len(data_list)} found):")
+                                            for data_item in data_list:
+                                                st.code(data_item, language="text")
+                                            st.markdown("""<hr style="margin:0.5rem 0;" />""", unsafe_allow_html=True)
 
                             else:
                                 st.info("No SpiderFoot results available for this scan.")
@@ -1459,6 +1502,27 @@ else:
 
                                     except json.JSONDecodeError:
                                         st.error("Could not parse raw Shodan data.")
+                                # NEW: Catch-all for other unhandled intel results
+                                other_results = [
+                                    r for r in spiderfoot_data 
+                                    if r.get('module') not in ['sfp_virustotal', 'sfp_shodan'] and r.get('type', '').upper() != 'INTERNET_NAME'
+                                ]
+                                if other_results:
+                                    with st.container(border=True):
+                                        st.markdown("<h5>📝 Other Intelligence Findings</h5>", unsafe_allow_html=True)
+                                        # Group remaining items for a clean display
+                                        grouped_items = {}
+                                        for item in other_results:
+                                            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
+                                            if item_type not in grouped_items:
+                                                grouped_items[item_type] = []
+                                            grouped_items[item_type].append(item.get('data', 'N/A'))
+                                        
+                                        for item_type, data_list in sorted(grouped_items.items()):
+                                            st.markdown(f"**{item_type}** ({len(data_list)} found):")
+                                            for data_item in data_list:
+                                                st.code(data_item, language="text")
+                                            st.markdown("""<hr style="margin:0.5rem 0;" />""", unsafe_allow_html=True)
                             else:
                                 st.info("No SpiderFoot results available for this scan.")
                         
@@ -1577,10 +1641,6 @@ else:
                             else:
                                 st.info("No password check results available for this scan.")
 
-            else:
-                st.error(f"Failed to fetch scan history: Status code {res.status_code}")
-        except Exception as e:
-            st.error(f"❌ An error occurred while processing scan history: {e}", icon="🔥")
         render_footer()
 
 
@@ -1814,7 +1874,7 @@ else:
             st.markdown("""
             **Yes.** We prioritize your security and privacy above all else. Here’s how we handle sensitive data:
             - **Passwords:** We **never** send your actual password to any server. We use a technique called "k-Anonymity" (the same model used by the trusted Have I Been Pwned service). This allows us to check for a breach without ever exposing the full password you entered.
-            - **API Keys & Other Secrets:** Your input is sent directly to the scanning tools (like TruffleHog) to be checked against public data. It is **never** written to our database or stored after the scan is complete.
+            - **API Keys & Other Secrets:** Your input is saved to your private Scan History so you can review it later. This data is linked only to your user session, is never shared, and is **automatically and permanently deleted from our system after 14 days.**
             Our fundamental goal is to help you find *existing* public leaks, not create new ones.
             """)
         with st.expander("**Where does the system search for my data?**"):
@@ -1970,5 +2030,5 @@ else:
         
         st.markdown("---")
         
-        st.success("🔐 **Your Privacy is Our Priority:** We never store your sensitive inputs. All scans are conducted ethically on publicly available data only.")
+        st.success("🔐 **Your Privacy is Our Priority:** Scan inputs are saved to your private history and auto-deleted after 14 days. All scans use public data only.")
         render_footer()

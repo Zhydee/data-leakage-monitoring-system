@@ -10,3 +10,6 @@ bcrypt==4.1.2
 python-jose[cryptography]==3.3.0
 passlib==1.7.4
 requests==2.31.0
+apscheduler 
+slowapi 
+cachetools
