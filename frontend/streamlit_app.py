@@ -126,18 +126,49 @@ def pdf_to_bytes(pdf) -> bytes:
         return out.encode("latin-1")
     # Last resort
     return bytes(out)
-# --- Caching---
-@st.cache_data(ttl=60, show_spinner=False) # Cache the result for 60 seconds
+
 def get_scan_history():
-    """Fetches and caches the scan history from the backend."""
+    """
+    Fetches scan history.
+    - For logged-in users, fetches their full history via the secure endpoint.
+    - For guests, fetches ONLY the last scan they ran in this session.
+    """
     try:
-        res = requests.get("http://localhost:8000/scan-history")
-        if res.status_code == 200:
-            return res.json()
+        # --- A. LOGIC FOR LOGGED-IN USERS (This part is mostly the same) ---
+        if 'user' in st.session_state:
+            user_id = st.session_state['user'].get('sub')
+            if not user_id:
+                return [] # Return empty list if user_id is missing
+            
+            api_url = f"http://localhost:8000/scan-history/{user_id}"
+            res = requests.get(api_url)
+
+            if res.status_code == 200:
+                return res.json()
+            else:
+                st.error(f"Failed to fetch scan data: Status code {res.status_code}")
+                return None
+
+        # --- B. NEW LOGIC FOR GUEST USERS ---
         else:
-            # Display an error in the app if fetching fails
-            st.error(f"Failed to fetch scan data: Status code {res.status_code}")
-            return None
+            # Check if we have stored an ID for a scan this guest recently ran
+            guest_scan_id = st.session_state.get('last_guest_scan_id')
+            
+            if guest_scan_id:
+                # Use the new public endpoint to get only this specific scan
+                api_url = f"http://localhost:8000/scan/{guest_scan_id}"
+                res = requests.get(api_url)
+
+                if res.status_code == 200:
+                    # The UI expects a list of scans, so we wrap the single result in a list
+                    return [res.json()]
+                else:
+                    # If the scan is not found (e.g., still processing), just return empty
+                    return []
+            else:
+                # This guest has not run any scans in this session yet
+                return []
+
     except Exception as e:
         st.error(f"❌ An error occurred while fetching scan history: {e}", icon="🔥")
         return None
@@ -374,13 +405,12 @@ def get_playbook_for_scan(scan_type: str) -> dict:
 4. Remove From History: Simply deleting the key from your code isn't enough, as it remains in the project's history. You must use a specialized tool to permanently erase it from all past versions."""
         },
         "username": {
-            "risk": """Finding your username on many sites reveals your "digital footprint." Scammers can look at your different public profiles to piece together information about you (your hobbies, location, friends). They use this to:
-- Create Personalized Scams: They can craft very convincing fake emails or messages that you are more likely to trust.
-- Guess Security Questions: They can try to use details from your profiles to answer security questions and break into more sensitive accounts.""",
-            "playbook": """Follow these steps to manage your digital footprint:
-1. Review Your Public Profiles: Click on the links found and look at them as if you were a stranger. What can they learn about you?
-2. Remove Sensitive Details: Go through your profiles and remove personal information you don't want the public to see, like your phone number, full birthdate, or home address.
-3. Tighten Your Privacy Settings: On each website, go into the account settings and change who can see your posts and personal information from "Public" to "Friends Only" or "Private."""
+            "risk": """Finding your username exposes your digital life in two ways:
+- Digital Footprint: Public profiles you created reveal your interests, location, and connections. Scammers use this to build a profile on you for targeted phishing attacks.
+- Unintentional Leaks: Your username might also appear in places you didn't intend, such as public forums discussing a data breach or in leaked log files. This is a more direct security risk.""",
+            "playbook": """Follow this two-part plan to secure your identity:
+1. Manage Your Digital Footprint (Social Media): Review the public profiles found in the report. Remove sensitive details (full birthdate, phone number, address) and tighten your privacy settings on each site to "Friends Only" or "Private".
+2. Address Unintentional Leaks (Web Mentions): Investigate any other links where your username was found. If the context is sensitive, contact the website administrator and request a takedown of the information. If it's a post you made, delete it yourself."""
         },
         "domain": {
             "risk": """The main risk for a domain owner is having your personal contact information (name, address, email) publicly listed in the ownership record (called a WHOIS record). This is like having your personal details in a phone book for the whole world to see, making you a target for spam and scams.""",
@@ -440,7 +470,7 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     pdf.cell(0, 10, "  Scan Summary", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
     pdf.ln(5)
 
-    dt = datetime.fromisoformat(scan["timestamp"]).strftime("%d %B %Y, %I:%M %p")
+    dt = datetime.fromisoformat(scan["timestamp"]).replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Asia/Kuala_Lumpur")).strftime("%d %B %Y, %I:%M %p")
     display_data_type = display_name_map.get(scan['data_type'], scan['data_type'].capitalize())
     severity = calculate_overall_severity(scan['data_type'], scan.get("results", {})) or "Not Found"
     
@@ -976,36 +1006,46 @@ else:
         # --- The submission logic block ---
         if scan_button:
             if search_data:
-                # 1. Validate the user's input
+                # 1. Validate the user's input (this part is the same)
                 pattern = regex_patterns[data_type]
                 backend_data_type = backend_data_type_map[data_type]
                 
                 if not re.search(pattern, search_data.strip()):
                     st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
                 else:
-                    # This is the only code that runs after successful validation
-                    
-                    # 2. Define the function that will run in the background
-                    def trigger_scan_in_background(payload):
-                        try:
-                            # This network request happens on a separate thread and does not block the app
-                            requests.post("http://localhost:8000/scan/start", json=payload, timeout=50)
-                        except Exception as e:
-                            # Log any errors to the console without disturbing the user
-                            print(f"Error in background scan trigger: {str(e)}")
+                    # --- THIS IS THE NEW LOGIC THAT REPLACES THE BACKGROUND THREAD ---
+                    st.info("Initiating scan...", icon="⏳")
 
-                    # 3. Prepare the data for the scan
+                    # 2. Prepare the data for the scan
                     payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
                     
-                    # 4. Create and start the background thread
-                    scan_thread = threading.Thread(target=trigger_scan_in_background, args=(payload,))
-                    scan_thread.start()
+                    # Add user_id if the user is logged in
+                    if 'user' in st.session_state:
+                        payload['user_id'] = st.session_state['user'].get('sub')
                     
-                    # 5. Give the user immediate feedback and let them navigate away
-                    st.success("✅ Scan initiated in the background!", icon="🚀")
-                    st.info("The results will appear in 'Scan History' when ready.", icon="ℹ️")
+                    try:
+                        # 3. Make a direct request to the backend to get the scan_id
+                        response = requests.post("http://localhost:8000/scan/start", json=payload, timeout=10)
+
+                        if response.status_code == 202: # Check for the 'Accepted' status code
+                            scan_id = response.json().get("scan_id")
+                            
+                            # 4. CRITICAL STEP: If it's a guest, save the ID to the session
+                            if 'user' not in st.session_state:
+                                st.session_state['last_guest_scan_id'] = scan_id
+
+                            st.success("✅ Scan initiated successfully!", icon="🚀")
+                            st.info("Please go to the 'Scan History' page to see the results shortly.", icon="ℹ️")
+                        
+                        else:
+                            st.error(f"Failed to start scan. Server responded with: {response.status_code} - {response.text}")
+
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"❌ Could not connect to the backend: {e}", icon="🔥")
+
             else:
                 st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
+
         render_footer()
 
     # --- NEW: SECURITY DASHBOARD PAGE ---
@@ -1221,38 +1261,49 @@ else:
 
                         # 1. ENRICHED USERNAME VIEW
                         if scan['data_type'] == 'username':
-                            st.markdown("### 🕵️ Username Footprint Analysis")
+                            st.markdown("### 🕵️ Username Footprint & Exposure Analysis")
                             
-                            sherlock_result = results.get('sherlock')
+                            sherlock_result = results.get('sherlock', {})
+                            google_result = results.get('google_dork', {})
                             
-                            st.subheader("Social Media Presence (from Sherlock)")
-                            if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list):
+                            # --- Section 1: Sherlock for Digital Footprint ---
+                            st.subheader("Social Media Presence (Digital Footprint)")
+                            if isinstance(sherlock_result, dict) and isinstance(sherlock_result.get("data"), list) and sherlock_result["data"]:
                                 sherlock_data = sherlock_result["data"]
-                                if not sherlock_data:
-                                    st.success("✅ No public social profiles found by Sherlock.")
-                                else:
-                                    st.metric(label="Public Profiles Found", value=len(sherlock_data))
-                                    st.warning("Found Public Social Profile(s)", icon="🕵️")
-                                    for url in sherlock_data:
-                                        ext = tldextract.extract(url)
-                                        platform = ext.domain.capitalize()
-                                        st.markdown(f"🔗 **{platform}:** [{url}]({url})")
-                                    # --- CONTEXTUAL RISK ANALYSIS ---
-                                    st.markdown("---")
-                                    st.error("🚨 What is the Risk?", icon="🤔")
-                                    st.markdown("""
-                                    Even though these are public profiles, they create a 'digital footprint'. Attackers can combine information from different accounts (like your interests, location, friends, and workplace) to build a detailed profile of you. This information can be used for:
-                                    - **Targeted Phishing:** Creating very convincing scam emails or messages that you are more likely to fall for.
-                                    - **Identity Theft:** Answering 'security questions' to try and access your more sensitive accounts.
-                                    - **Social Engineering:** Tricking you or your friends into revealing more information.
-                                    """)
+                                st.metric(label="Public Profiles Found", value=len(sherlock_data))
+                                st.info("These are public profiles you likely created. The risk comes from attackers combining information from them.", icon="👤")
+                                for url in sherlock_data:
+                                    ext = tldextract.extract(url)
+                                    platform = ext.domain.capitalize()
+                                    st.markdown(f"🔗 **{platform}:** [{url}]({url})")
+                            else:
+                                st.success("✅ No public social profiles were found by Sherlock.")
 
-                                    st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                                    st.markdown("""
-                                    1.  **Review Each Profile:** Click on the links above and check what information is publicly visible.
-                                    2.  **Remove Sensitive Details:** Take down any personal data you don't want strangers to know, like your full date of birth, phone number, home address, or specific location check-ins.
-                                    3.  **Tighten Privacy Settings:** Go into the settings of each platform and limit who can see your posts, photos, and personal information. Change settings from "Public" to "Friends Only" or "Private".
-                                    """)
+                            st.markdown("---")
+
+                            # --- Section 2: Google for Unintentional Leaks ---
+                            st.subheader("Public Web Mentions (Potential Leaks)")
+                            # We re-use the function you already have!
+                            render_google_results_block(results)
+
+                            # --- Section 3: Combined Risk & Playbook ---
+                            # Show this section if either tool found something.
+                            if (isinstance(sherlock_result, dict) and sherlock_result.get("data")) or \
+                               (isinstance(google_result, dict) and google_result.get("data")):
+                                
+                                st.markdown("---")
+                                st.error("🚨 What is the Risk?", icon="🤔")
+                                st.markdown("""
+                                Your username analysis has two parts:
+                                - **Digital Footprint (Social Media):** Attackers can combine information from your public profiles (interests, location, friends) to build a detailed picture of you for targeted phishing scams or to guess security questions.
+                                - **Potential Leaks (Web Mentions):** If your username was found on public forums or documents, it could be part of an unintentional data leak. This is higher risk as it exposes your username in contexts you did not intend.
+                                """)
+
+                                st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                                st.markdown("""
+                                1.  **For Social Media Profiles:** Click the links and review what is publicly visible. Remove sensitive details (phone number, full birthdate) and tighten your privacy settings on each site from "Public" to "Friends Only".
+                                2.  **For Public Web Mentions:** Investigate the source links found by the web scan. If they contain sensitive information, contact the website administrator and request a takedown. If it's a post you made, log in and delete it.
+                                """)
                             else:
                                 st.info("No Sherlock results available for this scan.")
 

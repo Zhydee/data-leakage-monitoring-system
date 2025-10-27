@@ -3,7 +3,7 @@ CREATE DATABASE dlms_db;
 
 CREATE TABLE scan_jobs (
     id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255),
+    user_id VARCHAR,
     data_type VARCHAR(50) NOT NULL,
     search_data TEXT NOT NULL,
     custom_regex VARCHAR(255),
@@ -11,7 +11,6 @@ CREATE TABLE scan_jobs (
     total_tools INTEGER DEFAULT 5,
     completed_tools INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
 );
 
 CREATE TABLE scan_results (

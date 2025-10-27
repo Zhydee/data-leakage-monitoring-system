@@ -7,6 +7,7 @@ class ScanRequest(BaseModel):
     search_data: str = Field(..., example="jack")
     custom_regex: Optional[str] = None
 
+    user_id: Optional[str] = None
 class ScanResponse(BaseModel):
     scan_id: int
     message: str = "Scan started successfully."

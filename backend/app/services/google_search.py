@@ -1,4 +1,3 @@
-# backend/app/services/google_search.py
 import os
 import re
 import logging
@@ -231,12 +230,10 @@ def extract_phone_ic_hits_from_google_items(items: List[Dict[str, Any]]) -> List
 # ----------------------------
 def run_google_dork(search_data: str, num_results: int = 5):
     """
-    Primary function for orchestrator to call.
-    Queries Google and extracts matches from the 'snippet' field first.
-    If the snippet yields no matches for a returned item, fetch the actual page HTML
-    and run regex over the full page text (higher yield).
-
-    Returns: {"success": True, "results": [ {source_url, snippet, matches}, ... ]}
+    Primary function for the orchestrator.
+    This new version is simpler and more effective for ALL data types.
+    It returns ALL URLs found by Google as potential leads, without trying to
+    be too strict and filtering them out. This is better for username scans.
     """
     results = []
     query = f'"{search_data}"'
@@ -249,30 +246,20 @@ def run_google_dork(search_data: str, num_results: int = 5):
 
     logging.info("run_google_dork: google returned %d items for query=%s", len(items), query)
 
-    for it in items:
-        link = it.get("link")
-        snippet = it.get("snippet", "") or ""
-        matches = extract_matches(snippet)
+    # Loop through every item Google found and format it for the frontend.
+    # We no longer try to verify matches, as this was filtering out username results.
+    for item in items:
+        # We still check for phone/IC in the snippet for display purposes, but we don't filter.
+        snippet = item.get("snippet", "")
+        matches = extract_matches(snippet) # This function is still useful for the UI
 
-        # If snippet had no matches, try fetching the page and scanning the full text
-        if (not matches.get("ic_numbers")) and (not matches.get("phone_numbers")) and link:
-            try:
-                logging.info("run_google_dork: no matches in snippet; fetching page %s", link)
-                rr = requests.get(link, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
-                page_text = BeautifulSoup(rr.text, "html.parser").get_text(" ")
-                matches = extract_matches(page_text)
-            except Exception as e:
-                logging.debug("run_google_dork: failed to fetch or parse page %s: %s", link, e, exc_info=True)
+        results.append({
+            "source_url": item.get("link"),
+            "snippet": snippet,
+            "matches": matches
+        })
 
-        # normalize the output shape exactly like your orchestrator + UI expect
-        results.append({"source_url": link, "snippet": snippet, "matches": matches})
-
-    # logging summary for visibility
-    total_matches = sum(
-        (1 if (r["matches"].get("ic_numbers") or r["matches"].get("phone_numbers")) else 0)
-        for r in results
-    )
-    logging.info("run_google_dork: finished, items=%d sources_with_matches=%d", len(items), total_matches)
+    logging.info("run_google_dork: finished, returning %d potential web mentions.", len(results))
 
     return {"success": True, "results": results}
 # ---------- START: NEW PHONE/IC EXTRACTION BLOCK ----------
@@ -338,4 +325,3 @@ def extract_matches(text: str) -> Dict[str, List[str]]:
             seen.add(masked)
             ics.append(masked)
     return {"ic_numbers": ics, "phone_numbers": phones}
-# ---------- END: NEW PHONE/IC EXTRACTION BLOCK ----------

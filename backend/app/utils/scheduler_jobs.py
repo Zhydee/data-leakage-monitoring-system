@@ -76,9 +76,11 @@ def get_results_hash(db: Session, scan_id: int) -> str:
     return hashlib.sha256(canonical_json.encode()).hexdigest()
 
 
-async def run_automated_scans():
+def run_automated_scans():
     """
-    Fetches monitored assets, runs scans, and creates alerts for new findings.
+    Fetches monitored assets, creates a "pending" job record for each,
+    and then runs the scan, updating the record. This now follows the
+    same two-step process as manual scans.
     """
     logger.info("SCHEDULER: Starting automated scanning job...")
     
@@ -94,17 +96,41 @@ async def run_automated_scans():
         for asset in assets_to_scan:
             logger.info(f"SCHEDULER: Processing asset ID {asset.id} ('{asset.search_data}') for user {asset.user_id}")
             
-            scan_request = ScanRequest(data_type=asset.data_type, search_data=asset.search_data)
+            # --- THIS IS THE CRITICAL FIX ---
+            # Step 1: Create the ScanJob record first to get a real scan_id.
+            try:
+                scan_job = models.ScanJob.create(
+                    user_id=asset.user_id,
+                    data_type=asset.data_type,
+                    search_data=asset.search_data,
+                    status="pending", # Start as pending
+                    created_at=datetime.utcnow(),
+                    scan_source="automated",
+                    custom_regex=None # Automated scans don't have custom regex
+                )
+                if not scan_job:
+                    raise Exception("Failed to create ScanJob in database.")
+                
+                scan_id = scan_job.id
+                logger.info(f"SCHEDULER: Created pending Job ID {scan_id} for asset {asset.id}.")
+
+            except Exception as e:
+                logger.error(f"SCHEDULER: Failed to create job for asset {asset.id}. Error: {e}")
+                continue # Skip to the next asset
+
+            # The ScanRequest object is still needed to pass data to the orchestrator.
+            scan_request = ScanRequest(
+                data_type=asset.data_type,
+                search_data=asset.search_data,
+                user_id=asset.user_id
+            )
+            # --- END OF FIX ---
             
             try:
+                # Step 2: Now call start_scan_job with the new scan_id.
+                start_scan_job(scan_request, scan_source="automated", scan_id=scan_id)
                 
-                scan_id = start_scan_job(scan_request, scan_source="automated")
-                
-                if not scan_id:
-                    logger.error(f"SCHEDULER: Scan failed to start for asset {asset.id}, likely invalid input. Skipping.")
-                    continue
-
-                logger.info(f"SCHEDULER: Scan completed for asset {asset.id}. New Job ID: {scan_id}")
+                logger.info(f"SCHEDULER: Scan completed for asset {asset.id}. Job ID: {scan_id}")
 
                 db_hash_session = SessionLocal()
                 try:
@@ -122,11 +148,15 @@ async def run_automated_scans():
                         scan_id=scan_id,
                         message=f"New potential leaks found for '{asset.search_data}'."
                     )
-                    asset.previous_results_hash = new_hash
+                    # Use the db_loop_session to update the asset
+                    asset_to_update = db_loop_session.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset.id).first()
+                    asset_to_update.previous_results_hash = new_hash
                 else:
                     logger.info(f"SCHEDULER: No new findings for asset {asset.id}.")
 
-                asset.last_scanned_at = datetime.utcnow()
+                # Use the db_loop_session to update the asset
+                asset_to_update = db_loop_session.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset.id).first()
+                asset_to_update.last_scanned_at = datetime.utcnow()
                 db_loop_session.commit()
                 logger.info(f"SCHEDULER: Successfully updated timestamp for asset {asset.id}.")
 

@@ -1,6 +1,6 @@
 from app.database import Base
 from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, JSON, Boolean
-from sqlalchemy.orm import relationship # <-- IMPORT THIS
+from sqlalchemy.orm import relationship 
 from datetime import datetime
 from app.database import SessionLocal
 
@@ -10,8 +10,9 @@ class ScanJob(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     # --- 1. ADD THE NEW COLUMN TO THE MODEL ---
-    scan_source = Column(String(20), nullable=False, default="manual")
+    user_id = Column(String, index=True, nullable=True)
     
+    scan_source = Column(String(20), nullable=False, default="manual")
     data_type = Column(String)
     search_data = Column(String)
     custom_regex = Column(String, nullable=True)
@@ -23,11 +24,12 @@ class ScanJob(Base):
     
     # --- 2. UPDATE THE CREATE METHOD SIGNATURE AND LOGIC ---
     @classmethod
-    def create(cls, data_type, search_data, custom_regex, status, created_at, scan_source="manual"):
+    def create(cls, data_type, search_data, custom_regex, status, created_at, scan_source="manual", user_id=None):
         db = SessionLocal()
         try:
             job = cls(
-                scan_source=scan_source, # Add the new field here
+                user_id=user_id, # Add the new field here
+                scan_source=scan_source,
                 data_type=data_type,
                 search_data=search_data,
                 custom_regex=custom_regex,
