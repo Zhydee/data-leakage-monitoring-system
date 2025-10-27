@@ -20,7 +20,7 @@ async def run_scan_and_update_asset(asset_id: int, scan_request: ScanRequest):
     logger.info(f"BACKGROUND_TASK: Starting immediate scan for asset ID {asset_id}...")
     
     # Run the scan job; it returns the new scan_id
-    scan_id = await start_scan_job(scan_request, scan_source="automated")
+    scan_id = start_scan_job(scan_request, scan_source="automated")
 
     if not scan_id:
         logger.error(f"BACKGROUND_TASK: Scan failed to start for asset {asset_id}. Timestamp not updated.")
@@ -82,7 +82,6 @@ async def run_automated_scans():
     """
     logger.info("SCHEDULER: Starting automated scanning job...")
     
-    # We need a separate session for the main loop to avoid stale data
     db_loop_session = SessionLocal()
     try:
         assets_to_scan = db_loop_session.query(models.MonitoredAsset).all()
@@ -98,7 +97,7 @@ async def run_automated_scans():
             scan_request = ScanRequest(data_type=asset.data_type, search_data=asset.search_data)
             
             try:
-                # This part is the same: it runs the scan using its own internal sessions
+                
                 scan_id = start_scan_job(scan_request, scan_source="automated")
                 
                 if not scan_id:
@@ -107,21 +106,16 @@ async def run_automated_scans():
 
                 logger.info(f"SCHEDULER: Scan completed for asset {asset.id}. New Job ID: {scan_id}")
 
-                # --- START OF THE FIX ---
-                # Create a NEW, FRESH session just for reading the results.
-                # This guarantees we see the data that start_scan_job just committed.
                 db_hash_session = SessionLocal()
                 try:
                     new_hash = get_results_hash(db_hash_session, scan_id)
                 finally:
-                    db_hash_session.close() # Always close the temporary session
-                # --- END OF THE FIX ---
+                    db_hash_session.close()
 
                 logger.info(f"SCHEDULER: Asset {asset.id} - Previous Hash: {asset.previous_results_hash}, New Hash: {new_hash}")
 
                 if new_hash != asset.previous_results_hash:
                     logger.warning(f"SCHEDULER: New findings detected for asset {asset.id}!")
-                    # The .create() method handles its own session, which is fine here
                     models.Alert.create(
                         asset_id=asset.id,
                         user_id=asset.user_id,
@@ -132,7 +126,6 @@ async def run_automated_scans():
                 else:
                     logger.info(f"SCHEDULER: No new findings for asset {asset.id}.")
 
-                # Now, update the timestamp and commit using the main loop's session
                 asset.last_scanned_at = datetime.utcnow()
                 db_loop_session.commit()
                 logger.info(f"SCHEDULER: Successfully updated timestamp for asset {asset.id}.")
