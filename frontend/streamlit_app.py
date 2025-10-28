@@ -10,6 +10,7 @@ import requests
 import random
 import os
 import re
+import time
 import plotly.express as px
 import pandas as pd
 from fpdf import FPDF
@@ -42,6 +43,13 @@ session = OAuth2Session(
     redirect_uri="http://localhost:8501",
 )
 
+@st.cache_data(ttl=3600, show_spinner=False) # Cache for 1 hour
+def get_jwks():
+    """Fetches and caches the JSON Web Key Set from Auth0."""
+    jwks_uri = f'https://{AUTH0_DOMAIN}/.well-known/jwks.json'
+    jwks = requests.get(jwks_uri).json()
+    return jwks
+
 # --- Helper Function For Authentication ---
 def get_authorization_url():
     """Generates the Auth0 authorization URL."""
@@ -57,30 +65,46 @@ def get_authorization_url():
     return authorization_url
 # Verified user identity. This is the core proof of authentication.
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_user_info(code):
-    """Exchanges the authorization code for an access token and decodes the ID token using the public JWKS."""
-    token_endpoint = f'https://{AUTH0_DOMAIN}/oauth/token'
-    
-    # Fetch the full token response
-    token = session.fetch_token(
-        url=token_endpoint,
-        code=code,
-        authorization_response=st.session_state.get('auth_response', '') 
-    )
-    
-    jwks_uri = f'https://{AUTH0_DOMAIN}/.well-known/jwks.json'
-    
-    # 2. Fetch the JSON Web Key Set (JWKS)
-    jwks = requests.get(jwks_uri).json()
-    
-    user_info = jwt.decode(
-        token['id_token'],
-        key=jwks
-    )
-    
-    user_info.validate()
+def get_user_info(code, auth_response):
+    """
+    Exchanges the authorization code for an access token and decodes the ID token.
+    This is the final, robust version with the clock skew fix.
+    """
+    try:
+        token_endpoint = f'https://{AUTH0_DOMAIN}/oauth/token'
+        
+        token = session.fetch_token(
+            url=token_endpoint,
+            code=code,
+            authorization_response=auth_response 
+        )
 
-    return user_info
+        jwks = get_jwks()
+
+        # Define the claims options for validation.
+        claims_options = {
+            'iss': {'essential': True, 'values': [f'https://{AUTH0_DOMAIN}/']},
+            'aud': {'essential': True, 'values': [AUTH0_CLIENT_ID]}
+        }
+
+        # Decode the token with a 5-minute leeway to handle clock skew robustly.
+        user_info = jwt.decode(
+            token['id_token'],
+            key=jwks,
+            claims_options=claims_options,
+            claims_params={'leeway': 300}
+        )
+        
+        user_info.validate()
+        
+        return user_info
+
+    except Exception as e:
+        # Log the error to the terminal for debugging, but re-raise it
+        # so the handle_auth_redirect function can show an error to the user.
+        print(f"An error occurred in get_user_info: {e}")
+        raise
+
 
 def display_login_prompt():
     """Shows a message and a sign-in button for protected pages."""
@@ -91,22 +115,43 @@ def display_login_prompt():
     st.link_button("Sign in ", auth_url, use_container_width=True)
 # For Authentication
 def handle_auth_redirect():
-    """Checks for the auth code in URL params and logs the user in."""
+    """
+    Checks for the auth code, provides immediate user feedback, and logs the user in.
+    """
     query_params = st.query_params
-    auth_code = query_params.get("code")
     
-    if auth_code:
-        st.session_state['auth_response'] = f"http://localhost:8501/?code={auth_code}"
+    # Check if the 'code' parameter exists in the URL
+    if "code" in query_params:
+        auth_code = query_params.get("code")
+        
+        # Immediately clear the ugly URL params
+        st.query_params.clear()
 
-    if auth_code and 'user' not in st.session_state:
-        try:
-            user_info = get_user_info(auth_code)
-            st.session_state['user'] = user_info
-            st.query_params.clear() 
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error during login: {e}")
-            st.error("Please try signing in again.")
+        # If we have a code but the user is not yet in the session state, process the login
+        if auth_code and 'user' not in st.session_state:
+            
+            # Show a spinner to the user so they know something is happening
+            with st.spinner("Authenticating, please wait..."):
+                try:
+                    # Construct the full response URL required by the library
+                    auth_response = f"http://localhost:8501/?code={auth_code}"
+                    
+                    # Call the function to get user info
+                    user_info = get_user_info(auth_code, auth_response)
+                    
+                    # If successful, store user info in the session and rerun
+                    st.session_state['user'] = user_info
+                    
+                    # A small delay can make the transition feel smoother
+                    time.sleep(0.5) 
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error during login: {e}")
+                    st.error("Authentication failed. Please try signing in again.")
+                    # Optionally, add a button to try again
+                    auth_url = get_authorization_url()
+                    st.link_button("Try Again", auth_url)
 
 # --- PDF ---
 def pdf_to_bytes(pdf) -> bytes:
