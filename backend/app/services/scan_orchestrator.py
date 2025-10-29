@@ -6,7 +6,6 @@ from datetime import datetime
 from tools.sherlock_wrapper import run_sherlock
 from tools.hibp_email import check_hibp_breaches
 from tools.hibp_passwords import check_pwned_password
-from tools.spiderfoot_wrapper import run_spiderfoot
 from tools.trufflehog_wrapper import run_trufflehog
 import re
 import os
@@ -15,12 +14,6 @@ import json
 import logging
 from sqlalchemy import select
 
-SPIDERFOOT_MODULE_MAP = {
-    "domain": ["sfp_dnsresolve", "sfp_dns", "sfp_whois"],
-    "ip": ["sfp_dnsresolve", "sfp_shodan", "sfp_virustotal"]
-}
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
 def start_scan_job(request: ScanRequest, scan_source: str = "manual", scan_id: int = None):
     """
@@ -56,7 +49,7 @@ def start_scan_job(request: ScanRequest, scan_source: str = "manual", scan_id: i
             logging.warning(f"Pattern did not match for job {scan_id}: {request.search_data}")
             return
 
-        tools = ["trufflehog", "google_dork", "spiderfoot", "hibp_emails", "sherlock", "hibp_passwords"]
+        tools = ["trufflehog", "google_dork", "hibp_emails", "sherlock", "hibp_passwords"]
         for tool in tools:
             models.ToolStatus.create(job_id=scan_id, tool_name=tool, status="pending")
 
@@ -76,8 +69,6 @@ def start_scan_job(request: ScanRequest, scan_source: str = "manual", scan_id: i
             if result["success"] and result.get("found_on"):
                 models.ScanResult.create(job_id=scan_id, tool_name="sherlock", result=result["found_on"], confidence=0.8, severity="low", result_type="url", source_url="https://github.com/sherlock-project/sherlock")
         
-        # --- (Continue with the rest of your tool workflows: HIBP Email, SpiderFoot, etc.) ---
-        # --- They do not need to be changed. Just make sure they are included here. ---
         
         # --- HIBP Email Workflow ---
         if data_type == "email":
@@ -87,17 +78,8 @@ def start_scan_job(request: ScanRequest, scan_source: str = "manual", scan_id: i
             if result["success"]:
                 models.ScanResult.create(job_id=scan_id, tool_name="hibp_emails", result=result.get("breaches", []), confidence=1.0, severity="high" if result.get("breaches") else "none", result_type="json", source_url="https://haveibeenpwned.com")
 
-        # --- SpiderFoot Workflow ---
-        if data_type in SPIDERFOOT_MODULE_MAP:
-            modules_to_run = SPIDERFOOT_MODULE_MAP[data_type]
-            logging.info(f"[{scan_id}] Running SpiderFoot Scan with modules: {modules_to_run}...")
-            result = run_spiderfoot(request.search_data, modules=modules_to_run)
-            models.ToolStatus.update_status(db, scan_id, "spiderfoot", "completed" if result["success"] else "failed", result.get("error"))
-            if result["success"] and result.get("results"):
-                models.ScanResult.create(job_id=scan_id, tool_name="spiderfoot", result=result["results"], confidence=0.9, severity="medium", result_type="json", source_url="https://www.spiderfoot.net/")
-
         # --- Google Dork Workflow ---
-        if data_type in ["phone", "ic", "username"]:
+        if data_type in ["phone", "ic", "username", "full_name"]:
             logging.info(f"[{scan_id}] Running Google Custom Search...")
             from app.services.google_search import run_google_dork
             result = run_google_dork(request.search_data)

@@ -314,65 +314,21 @@ st.markdown("""
 # --- DATA MAPPING ---
 backend_data_type_map = {
     "Email Address": "email",
+    "Full Name": "full_name",
     "IC Number": "ic", 
     "Password": "password",
     "Phone Number": "phone", 
     "Username": "username",
     "GitHub Repository": "github_repo",
-    "Domain Name": "domain",
-    "IP Address": "ip"
 }
 display_name_map = {v: k for k, v in backend_data_type_map.items()}
 regex_patterns = {
                     "Email Address": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
                     "Password": r".{6,}", "Phone Number": r'^(?:\+?60|60|0)(?:[\s\-\.]?\(?\d{1,3}\)?)(?:[\s\-\.]?\d){6,8}$',
-                    "Username": r"^[a-zA-Z0-9_-]{3,16}$", "Domain Name": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-                    "IP Address": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-                    "IC Number": r"^\d{6}-\d{2}-\d{4}$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
+                    "Username": r"^[a-zA-Z0-9_-]{3,16}$",
+                    "IC Number": r"^\d{6}-?\d{2}-?\d{4}$", "Full Name": r"^[A-Za-z\s.'@]+$", "GitHub Repository": r"^https?://github\.com/[\w.-]+/[\w.-]+/?$",
                 }
 
-# --- HELPER FUNCTION TO PARSE SPIDERFOOT DATA ---
-def parse_spiderfoot_account(raw_data_string: str) -> dict:
-    """
-    Parses the raw string from SpiderFoot's sfp_accounts module
-    into a clean, structured dictionary.
-    """
-    platform = "Unknown"
-    category = "N/A"
-    url = ""
-
-    # 1. Extract the URL and remove the <SFURL>...</SFURL> tag from the string
-    url_match = re.search(r"<SFURL>(.*?)</SFURL>", raw_data_string)
-    if url_match:
-        url = url_match.group(1)
-        # Remove the entire tag block
-        raw_data_string = raw_data_string.replace(url_match.group(0), "").strip()
-
-    # 2. Extract the platform and category (e.g., "Blogspot (Category: blog)")
-    # We look for the entire pattern including the parentheses.
-    category_match = re.search(r"\((Category: .*?)\)", raw_data_string)
-
-    if category_match:
-        # Extract the category text (e.g., "Category: blog")
-        full_category_string = category_match.group(0) # e.g., "(Category: blog)"
-        category_content = category_match.group(1)     # e.g., "Category: blog"
-
-        # Clean up the category name
-        category = category_content.replace("Category: ", "").strip()
-
-        # THE FIX: Remove the entire "(Category...)" block to get the clean platform name
-        platform = raw_data_string.replace(full_category_string, "").strip()
-
-    else:
-        # If no category was found, the whole string is the platform name
-        platform = raw_data_string
-
-    # Final cleanup
-    return {
-        "platform": platform.strip(),
-        "category": category,
-        "url": url
-    }
 RECOMMENDATION_MAP = {
     "blog": """
         **💡 Recommendation:**<br>
@@ -409,67 +365,64 @@ def get_playbook_for_scan(scan_type: str) -> dict:
     playbooks = {
         "email": {
             "risk": """Your email address is like the master key to your digital life. When it appears in a data breach, hackers get access to both your email and the password you used on that site. They use this to:
-- Break Into Other Accounts: If you reuse passwords, they will try the leaked password on your email, banking, and social media accounts.
-- Send Convincing Scams: They can create targeted scam emails (phishing) that look real, tricking you into revealing more sensitive information.
-- Attempt Identity Theft: With enough information, they can try to impersonate you.""",
+- **Break Into Other Accounts:** If you reuse passwords, they will try the leaked password on your email, banking, and social media accounts.
+- **Send Convincing Scams:** They can create targeted scam emails (phishing) that look real, tricking you into revealing more sensitive information.
+- **Attempt Identity Theft:** With enough information, they can try to impersonate you.""",
             "playbook": """Follow these steps immediately to protect yourself:
-1. Change Your Passwords Now: Go to the websites listed in the breach and change your password. Most importantly, if you used that same password anywhere else, change it there too.
-2. Enable Extra Security (2FA): Turn on "Two-Factor Authentication" (also called 2FA or MFA) for your important accounts, especially your email. This sends a unique code to your phone when you log in, stopping a hacker even if they have your password.
-3. Use a Password Manager: Consider using a password manager (like Bitwarden or 1Password). These tools create and remember a unique, strong password for every site, so you don't have to."""
+1.  **Change Your Passwords Now:** Go to the websites listed in the breach and change your password. Most importantly, if you used that same password anywhere else, change it there too.
+2.  **Enable Extra Security (2FA):** Turn on "Two-Factor Authentication" (also called 2FA or MFA) for your important accounts, especially your email. This sends a unique code to your phone when you log in, stopping a hacker even if they have your password.
+3.  **Use a Password Manager:** Consider using a password manager (like Bitwarden or 1Password). These tools create and remember a unique, strong password for every site, so you don't have to."""
         },
         "password": {
             "risk": """This password is no longer safe. It has been exposed in a data breach and is now on public lists used by hackers. Using this password for any account is like leaving your front door wide open.
-- Automated Attacks: Hackers will use this password in automated attacks to try and log into thousands of popular websites, hoping to find one of your accounts.
-- Account Takeover: If they get into one account, they will try to use it to reset the passwords for your other, more important accounts.""",
+- **Automated Attacks:** Hackers will use this password in automated attacks to try and log into thousands of popular websites, hoping to find one of your accounts.
+- **Account Takeover:** If they get into one account, they will try to use it to reset the passwords for your other, more important accounts.""",
             "playbook": """Take these steps immediately for any account using this password:
-1. Stop Using This Password: Change this password immediately on every single website and app where you currently use it.
-2. Create New, Unique Passwords: Do not just change one character. Each account needs its own completely different, strong password.
-3. Get a Password Manager: This is the best way to manage unique passwords. A password manager is a secure app that creates and remembers strong passwords for you, so you only need to remember one master password.
-4. Turn On Extra Security (2FA): Enable "Two-Factor Authentication" wherever you can. It's your best defense against password leaks."""
+1.  **Stop Using This Password:** Change this password immediately on every single website and app where you currently use it.
+2.  **Create New, Unique Passwords:** Do not just change one character. Each account needs its own completely different, strong password.
+3.  **Get a Password Manager:** This is the best way to manage unique passwords. A password manager is a secure app that creates and remembers strong passwords for you, so you only need to remember one master password.
+4.  **Turn On Extra Security (2FA):** Enable "Two-Factor Authentication" wherever you can. It's your best defense against password leaks."""
         },
         "phone": {
             "risk": """Having your phone number or IC number public is a high risk. Scammers and identity thieves specifically look for this information to:
-- Target You with Scams: Expect an increase in spam calls and scam text messages designed to trick you.
-- Impersonate You: Your IC number is a core piece of your identity and can be used to open fraudulent accounts in your name.
-- Hijack Your Phone Number: Criminals can try to trick your mobile provider into moving your number to their phone. This lets them intercept your calls, messages, and security codes.""",
+- **Target You with Scams:** Expect an increase in spam calls and scam text messages designed to trick you.
+- **Impersonate You:** Your IC number is a core piece of your identity and can be used to open fraudulent accounts in your name.
+- **Hijack Your Phone Number:** Criminals can try to trick your mobile provider into moving your number to their phone. This lets them intercept your calls, messages, and security codes.""",
             "playbook": """Here is how to handle this exposure:
-1. Investigate the Source: Look at the websites listed in the findings to understand why your information is public.
-2. Request Removal: Contact the website's administrator and ask them to remove your personal information.
-3. Delete it Yourself: If it's a post you made on social media or a forum, log in and delete it immediately.
-4. Be Extra Cautious: Be very suspicious of unexpected calls or texts. Never give out personal details or one-time security codes that are sent to you."""
+1.  **Investigate the Source:** Look at the websites listed in the findings to understand why your information is public.
+2.  **Request Removal:** Contact the website's administrator and ask them to remove your personal information.
+3.  **Delete it Yourself:** If it's a post you made on social media or a forum, log in and delete it immediately.
+4.  **Be Extra Cautious:** Be very suspicious of unexpected calls or texts. Never give out personal details or one-time security codes that are sent to you."""
+        },
+        "full_name": {
+            "risk": """Having your full legal name exposed on public websites is a significant privacy risk. It's the primary piece of data that links your online activities to your real-world identity. Attackers can use it to:
+- **De-anonymize You:** Connect your anonymous usernames from forums or social media back to who you really are.
+- **Craft Targeted Scams:** Phishing emails and scam messages are far more convincing when they use your full name.
+- **Build a Profile for Identity Theft:** Your name is the starting point for criminals to gather more information about you, such as your address, phone number, and workplace.""",
+            "playbook": """1.  **Investigate the Context:** Carefully review the links from the scan to understand why your name is public. Is it a conference attendee list, a public record, or a forum post you once made?
+2.  **Request Takedown for Unintentional Leaks:** If your name is on a list or document where it shouldn't be (like a leaked customer list), contact the website's administrator and request they remove the information, citing privacy concerns.
+3.  **Remove it Yourself:** If it's a social media profile or a forum post you created, log in and either edit the post to use a pseudonym or delete it entirely.
+4.  **Be Mindful in the Future:** When signing up for new services, consider if it's truly necessary to provide your full legal name. Use an alias or just your first name for non-official accounts."""
         },
         "github_repo": {
             "risk": """An exposed "secret" (like an API key) in a public code repository is a critical risk. It's like leaving the key to your office or cloud services lying on the street for anyone to pick up and use. An attacker can:
-- Steal Your Data: Access, change, or delete information from the service the key belongs to.
-- Impersonate You: Take actions on your behalf without your knowledge.
-- Run Up Huge Bills: If the key is for a cloud service (like AWS or Google Cloud), an attacker can use it to run expensive operations, leaving you with a massive bill.""",
+- **Steal Your Data:** Access, change, or delete information from the service the key belongs to.
+- **Impersonate You:** Take actions on your behalf without your knowledge.
+- **Run Up Huge Bills:** If the key is for a cloud service (like AWS or Google Cloud), an attacker can use it to run expensive operations, leaving you with a massive bill.""",
             "playbook": """Act IMMEDIATELY. Every second counts.
-1. Disable the Leaked Key (Most Important Step): Log into the dashboard of the service the key belongs to and immediately revoke or delete it. This makes the leaked key useless.
-2. Generate a New Key: Create a new, replacement key to be used safely.
-3. Update Your Applications: Replace the old, revoked key with the new one in all your applications.
-4. Remove From History: Simply deleting the key from your code isn't enough, as it remains in the project's history. You must use a specialized tool to permanently erase it from all past versions."""
+1.  **Disable the Leaked Key (Most Important Step):** Log into the dashboard of the service the key belongs to and immediately revoke or delete it. This makes the leaked key useless.
+2.  **Generate a New Key:** Create a new, replacement key to be used safely.
+3.  **Update Your Applications:** Replace the old, revoked key with the new one in all your applications.
+4.  **Remove From History:** Simply deleting the key from your code isn't enough, as it remains in the project's history. You must use a specialized tool to permanently erase it from all past versions."""
         },
         "username": {
             "risk": """Finding your username exposes your digital life in two ways:
-- Digital Footprint: Public profiles you created reveal your interests, location, and connections. Scammers use this to build a profile on you for targeted phishing attacks.
-- Unintentional Leaks: Your username might also appear in places you didn't intend, such as public forums discussing a data breach or in leaked log files. This is a more direct security risk.""",
+- **Digital Footprint:** Public profiles you created reveal your interests, location, and connections. Scammers use this to build a profile on you for targeted phishing attacks.
+- **Unintentional Leaks:** Your username might also appear in places you didn't intend, such as public forums discussing a data breach or in leaked log files. This is a more direct security risk.""",
             "playbook": """Follow this two-part plan to secure your identity:
-1. Manage Your Digital Footprint (Social Media): Review the public profiles found in the report. Remove sensitive details (full birthdate, phone number, address) and tighten your privacy settings on each site to "Friends Only" or "Private".
-2. Address Unintentional Leaks (Web Mentions): Investigate any other links where your username was found. If the context is sensitive, contact the website administrator and request a takedown of the information. If it's a post you made, delete it yourself."""
+1.  **Manage Your Digital Footprint (Social Media):** Review the public profiles found in the report. Remove sensitive details (full birthdate, phone number, address) and tighten your privacy settings on each site to "Friends Only" or "Private".
+2.  **Address Unintentional Leaks (Web Mentions):** Investigate any other links where your username was found. If the context is sensitive, contact the website administrator and request a takedown of the information. If it's a post you made, delete it yourself."""
         },
-        "domain": {
-            "risk": """The main risk for a domain owner is having your personal contact information (name, address, email) publicly listed in the ownership record (called a WHOIS record). This is like having your personal details in a phone book for the whole world to see, making you a target for spam and scams.""",
-            "playbook": """Here is how you can protect your privacy:
-1. Enable WHOIS Privacy (Most Important Step): Contact the company where you bought your domain name (your "Registrar") and ask them to turn on "WHOIS Privacy" or "Domain Privacy Protection." Most providers offer this to hide your personal details from the public record.
-2. Review Technical Settings: The other information found is usually technical. You only need to check these settings if your website or email is not working properly."""
-        },
-        "ip": {
-            "risk": """An IP address is your computer's or network's public address on the internet. The report can show "open doors" (or "ports") that are visible to the public. Each open door is a potential way for attackers to get into your network. If your IP address gets a bad reputation, other websites might block you.""",
-            "playbook": """Follow these steps to secure your network:
-1. Close Unnecessary "Doors": The report may list open services. Any service you don't recognize or need for public access should be closed. This is usually done in the security or "firewall" settings of your internet router.
-2. Secure What's Left: For any services that must remain public (like a web server for a website), make sure the software is always fully updated and protected with strong passwords.
-3. Investigate a Bad Reputation: If the report shows your IP has a bad reputation, it often means a device on your network (like a computer or phone) has a virus. Run antivirus scans on all your devices."""
-        }
     }
     # For "ic", the playbook is the same as for "phone"
     playbooks["ic"] = playbooks["phone"]
@@ -486,6 +439,33 @@ def safe_filename(text: str, max_len: int = 60) -> str:
         text = "report"
     return (text[:max_len])  # keep it short; browsers don’t need full URL here
 
+def write_markdown_to_pdf(pdf, text, height=5):
+    """
+    A helper to write text with simple Markdown (like **bold**) to an FPDF object.
+    """
+    # Set base font
+    pdf.set_font("Helvetica", "", 10)
+    
+    # Handle bullet points
+    if text.strip().startswith("- "):
+        text = text.strip()[2:] # Remove the "- "
+        pdf.cell(5) # Indent
+        pdf.multi_cell(0, height, f"- {text}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        return
+
+    # Split the text by the bold delimiter '**'
+    parts = text.split('**')
+    
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # This is normal text
+            pdf.set_font("Helvetica", "", 10)
+        else:
+            # This is bold text
+            pdf.set_font("Helvetica", "B", 10)
+        pdf.write(height, part)
+    pdf.ln(height) # Move to the next line after processing all parts
+
 # --- PDF GENERATION FUNCTION ---
 def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     """
@@ -494,6 +474,7 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     """
     
     pdf = FPDF()
+    
     pdf.set_auto_page_break(auto=True, margin=15) 
     pdf.add_page()
     
@@ -670,34 +651,6 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
         pdf.set_text_color(0, 0, 0)
         pdf.ln(8)
 
-    # SpiderFoot (Domain/IP) Renderer
-    spiderfoot_result = results.get('spiderfoot', {})
-    if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list) and spiderfoot_result["data"]:
-        sf_data = spiderfoot_result["data"]
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, "-> Intelligence Scan (SpiderFoot)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.multi_cell(0, 5, f"  Summary: Found {len(sf_data)} related intelligence items.")
-        pdf.ln(4)
-        
-        # Group similar items for a cleaner report
-        grouped_items = {}
-        for item in sf_data[:15]: # Limit to 15 items
-            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
-            if item_type not in grouped_items:
-                grouped_items[item_type] = []
-            grouped_items[item_type].append(item.get('data', 'N/A'))
-        
-        for item_type, data_list in grouped_items.items():
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.multi_cell(0, 5, f"  - {item_type}:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_font("Helvetica", "", 8)
-            for data_item in data_list:
-                display_data = data_item[:100] + "..." if len(data_item) > 103 else data_item
-                pdf.multi_cell(0, 5, f"    - {display_data}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.ln(2)
-        pdf.ln(8)
-
 
     # --- 4. Actionable Recommendations Page ---
     pdf.add_page()
@@ -715,8 +668,32 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
     pdf.ln(4)
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(0, 0, 0)
-    pdf.multi_cell(0, 6, playbook['risk'])
-    pdf.ln(8)
+
+    for line in playbook['risk'].split('\n'):
+        if not line.strip():
+            pdf.ln(3) # Add a small space for empty lines
+            continue
+        
+        # This is the logic from the playbook, now applied here
+        parts = line.split('**')
+        is_bullet = line.strip().startswith("- ")
+        if is_bullet:
+            pdf.cell(5) # Indent for bullet
+            pdf.write(5, "- ")
+            line = line.strip()[2:] # Remove bullet syntax
+            parts = line.split('**') # Re-split after removing bullet
+
+        for i, part in enumerate(parts):
+            # Text is bold if it's an odd-indexed part
+            is_bold = (i % 2 == 1)
+            
+            if is_bold:
+                pdf.set_font("Helvetica", "B", 10)
+            else:
+                pdf.set_font("Helvetica", "", 10)
+            pdf.write(5, part)
+        pdf.ln(5) # Move to the next line
+    pdf.ln(4)
 
     # Playbook Section
     pdf.set_font("Helvetica", "B", 12)
@@ -732,10 +709,16 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
         if match:
             number, text = match.groups()
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(10, 6, f"{number}.")
-            pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.ln(2)
+            pdf.cell(5) # Small indent for the number
+            pdf.cell(10, 5, f"{number}.")
+            
+            # Save current position to handle text wrapping correctly
+            x_pos = pdf.get_x()
+            y_pos = pdf.get_y()
+            pdf.set_xy(x_pos, y_pos)
+
+            # Use our new function to render the text part
+            write_markdown_to_pdf(pdf, text)
         else:
             pdf.set_font("Helvetica", "B", 10)
             pdf.multi_cell(0, 6, step)
@@ -773,15 +756,6 @@ def calculate_overall_severity(scan_type: str, results: dict) -> str | None:
         if isinstance(hibp_result, dict) and hibp_result.get("data", {}).get("pwned", False):
             return "CRITICAL"
 
-    if scan_type == 'ip':
-        spiderfoot_result = results.get('spiderfoot', {})
-        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-            vt_results = [r for r in spiderfoot_result.get("data", []) if r.get('module') == 'sfp_virustotal']
-            if vt_results:
-                detections_str = vt_results[0].get('data', '0/0').split('/')[0]
-                if detections_str.isdigit() and int(detections_str) > 0:
-                    return "CRITICAL"
-
     if scan_type == 'github_repo':
         trufflehog_result = results.get('trufflehog', {})
         if isinstance(trufflehog_result, dict) and trufflehog_result.get("data"):
@@ -797,19 +771,12 @@ def calculate_overall_severity(scan_type: str, results: dict) -> str | None:
         google_result = results.get("google_dork", {})
         if isinstance(google_result, dict) and google_result.get("data"):
             return "HIGH"
-
-    if scan_type == 'ip':
-        spiderfoot_result = results.get('spiderfoot', {})
-        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-            if any(r.get('module') == 'sfp_shodan' for r in spiderfoot_result.get("data", [])):
-                return "HIGH"
-
+        
     # --- MEDIUM SEVERITY ---
-    if scan_type == 'email':
-        spiderfoot_result = results.get('spiderfoot', {})
-        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-            if any(r.get('module') == 'sfp_whois' for r in spiderfoot_result.get("data", [])):
-                return "MEDIUM"
+    if scan_type == 'full_name':
+        google_result = results.get("google_dork", {})
+        if isinstance(google_result, dict) and google_result.get("data"):
+            return "MEDIUM"
 
     # --- LOW SEVERITY ---
     if scan_type == 'username':
@@ -818,105 +785,64 @@ def calculate_overall_severity(scan_type: str, results: dict) -> str | None:
         if isinstance(sherlock_result, dict) and sherlock_result.get("data"):
             return "LOW"
             
-    if scan_type == 'domain':
-        spiderfoot_result = results.get('spiderfoot', {})
-        if isinstance(spiderfoot_result, dict) and spiderfoot_result.get("data"):
-            return "LOW"
-        
-    if scan_type in ('domain', 'ip'):
-        spiderfoot_result = results.get('spiderfoot', {})
-        if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list) and spiderfoot_result["data"]:
-            return "LOW"
 
     return None
 # --- Google Custom Search (Google Dork) friendly display ---
-def render_google_results_block(results):
+def render_google_results_block(results, scan_type, search_data):
     """
-    Nicely formatted Google Custom Search block for Streamlit.
-    Paste this function to replace your existing render_google_results_block.
+    Renders a much-improved, context-aware block for Google Custom Search results.
+    - Shows hit counts and pills for Phone/IC scans.
+    - Highlights the search term for Full Name/Username scans.
     """
     google_result = results.get("google_dork")
-    # Normalise shape (supports either list or {"data": [...]})
-    if isinstance(google_result, dict) and isinstance(google_result.get("data"), list):
-        google_list = google_result["data"]
-    elif isinstance(google_result, list):
-        google_list = google_result
-    else:
-        google_list = []
-
-    # Small CSS for "pill" badges
-    pill_css = """
-    <style>
-      .pill { display:inline-block; margin:4px 6px 4px 0; padding:6px 10px; 
-              border-radius:999px; background:#f1f5f9; color:#0f172a; font-family:inherit; }
-      .source_link { font-weight:600; font-size:16px; color:#0b69ff; text-decoration:none; }
-      .snippet { color:#334155; margin-top:6px; margin-bottom:6px; font-style:italic; }
-      .card { padding:14px 18px; border-radius:8px; background: #ffffff; box-shadow: 0 1px 4px rgba(15,23,42,0.04); }
-      .meta { color:#475569; font-size:13px; }
-      .divider { margin-top:12px; margin-bottom:12px; border-top:1px solid #e6eef8; }
-    </style>
-    """
+    google_list = google_result.get("data", []) if isinstance(google_result, dict) else []
 
     if not google_list:
-        st.info("Nice — no public matches found right now. Your data looks safe ✅")
+        st.info("✅ No public web mentions were found by Google for this data.")
         return
 
-    # Header
-    st.markdown("### 🔎 Google Custom Search (Public Web Findings)")
-    st.info(f"Found **{len(google_list)}** source(s) from Google Custom Search.")
+    st.markdown("### 🔎 Public Web Findings (Google)")
+    st.info(f"Found **{len(google_list)}** potential source(s) mentioning this data.")
 
-    # Inject pill CSS once
-    st.markdown(pill_css, unsafe_allow_html=True)
+    for result in google_list:
+        with st.container(border=True):
+            source_url = result.get('source_url', 'N/A')
+            snippet = result.get('snippet', 'No snippet available.').strip()
 
-    # Render each result as a card
-    for gr in google_list:
-        src = gr.get("source_url", "") or "N/A"
-        matches = gr.get("matches", {}) or {}
-        ic_matches = matches.get("ic_numbers", []) or []
-        phone_matches = matches.get("phone_numbers", []) or []
-        snippet = (gr.get("snippet") or "").strip()
+            # Display the source URL first for clarity
+            st.markdown(f"🔗 **Source:** [{source_url}]({source_url})")
 
-        with st.container():
-            cols = st.columns([8, 2])
-            # left column: source + pills + snippet
-            left = cols[0]
-            right = cols[1]
+            # --- Context-Aware Display ---
+            if scan_type in ('phone', 'ic'):
+                # For Phone/IC, display the structured "pills" and hit count
+                matches = result.get("matches", {}) or {}
+                ic_matches = matches.get("ic_numbers", []) or []
+                phone_matches = matches.get("phone_numbers", []) or []
+                total_hits = len(ic_matches) + len(phone_matches)
 
-            # Source link (clickable)
-            if src and src != "N/A":
-                left.markdown(f"<a class='source_link' href='{src}' target='_blank' rel='noopener noreferrer'>🔗 {src}</a>", unsafe_allow_html=True)
-            else:
-                left.markdown("🔗 N/A")
+                st.markdown(f"**Hits Found in Snippet:** {total_hits}")
+                if phone_matches:
+                    st.markdown(f"**Phone:** `{'`, `'.join(phone_matches)}`")
+                if ic_matches:
+                    st.markdown(f"**IC:** `{'`, `'.join(ic_matches)}`")
+                
+                # Display the original snippet for context
+                st.markdown(f"> *{snippet}*")
 
-            # Pills for phone & IC matches
-            pills_html = ""
-            if phone_matches:
-                pills_html += "<div style='margin-top:8px'><strong>Phone:</strong> "
-                for p in phone_matches:
-                    pills_html += f"<span class='pill'>{p}</span>"
-                pills_html += "</div>"
-            if ic_matches:
-                pills_html += "<div style='margin-top:6px'><strong>IC:</strong> "
-                for i in ic_matches:
-                    pills_html += f"<span class='pill'>{i}</span>"
-                pills_html += "</div>"
-
-            if pills_html:
-                left.markdown(pills_html, unsafe_allow_html=True)
-
-            # Right column: compact meta (counts)
-            total_hits = len(phone_matches) + len(ic_matches)
-            right.markdown(f"<div class='meta'>Hits: <strong>{total_hits}</strong></div>", unsafe_allow_html=True)
-
-            # Snippet (shorten to 300 chars)
-            if snippet:
-                trimmed = snippet if len(snippet) <= 300 else snippet[:297].rstrip() + "..."
-                left.markdown(f"<div class='snippet'>{trimmed}</div>", unsafe_allow_html=True)
-            else:
-                left.markdown("<div class='meta'>No snippet available.</div>", unsafe_allow_html=True)
-
-            # divider
-            st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
+            elif scan_type in ('full_name', 'username'):
+                # For Full Name/Username, highlight the search term in the snippet
+                try:
+                    # Use regex to find and bold all case-insensitive matches of the search data
+                    highlighted_snippet = re.sub(
+                        f"({re.escape(search_data)})",
+                        r"**\1**",  # Wrap the found group in Markdown bold
+                        snippet,
+                        flags=re.IGNORECASE
+                    )
+                    st.markdown(f"> {highlighted_snippet}", unsafe_allow_html=True)
+                except re.error:
+                    # Fallback in case of a regex error with a weird name
+                    st.markdown(f"> *{snippet}*")
 
 
 
@@ -1007,24 +933,22 @@ else:
                 # The form starts here, encapsulating everything that needs to be submitted
                 with st.form(key="scan_form"):
                     help_messages = {
-                        "Email Address": "Check if your email has been leaked in public data breaches.",
+                        "Email Address": "Check if your email has been leaked in public data breaches. E.g., user@example.com",
                         "Password": "Check if a password has been exposed in a data breach. The password is not sent to any server.",
-                        "Phone Number": "Find out if your phone number is exposed in public sources.",
-                        "Username": "Scan the internet for social media and forum accounts matching a username.",
-                        "Domain Name": "Discover if a domain has been associated with leaked data.",
-                        "IP Address": "Check if an IP address is publicly exposed or mentioned.",
-                        "IC Number": "Monitor Malaysian IC number exposure.",
-                        "GitHub Repository": "Scan an entire public GitHub repository for any exposed secrets.",
-                    }
+                        "Phone Number": "Find out if your phone number is exposed in public sources. E.g., 0123456789, 012-3456789 or +60123456789",
+                        "Username": "Scan the internet for social media and forum accounts matching a username. E.g., testuser123",
+                        "IC Number": "Monitor Malaysian IC number exposure. E.g., 990101-14-1234 or 990101141234",
+                        "Full Name": "Find where your full name is mentioned on public websites, documents, and lists. E.g., Mohd Ali Bin Abu",
+                        "GitHub Repository": "Scan an entire public GitHub repository for any exposed secrets. E.g., https://github.com/user/repository",
+}
                     
                     placeholder_examples = {
                         "Email Address": "e.g., user@example.com",
                         "Password": "Enter a password to check its exposure",
-                        "Phone Number": "e.g., 012-3456789 or +60123456789",
+                        "Phone Number": "e.g., 0123456789, 012-3456789 or +60123456789",
                         "Username": "e.g., testuser123",
-                        "Domain Name": "e.g., example.com",
-                        "IP Address": "e.g., 8.8.8.8",
-                        "IC Number": "e.g., 990101-14-1234",
+                        "IC Number": "e.g., 990101-14-1234 or 990101141234",
+                        "Full Name": "e.g., Mohd Ali Bin Abu",
                         "GitHub Repository": "e.g., https://github.com/user/repository",
                     }
 
@@ -1328,8 +1252,7 @@ else:
 
                             # --- Section 2: Google for Unintentional Leaks ---
                             st.subheader("Public Web Mentions (Potential Leaks)")
-                            # We re-use the function you already have!
-                            render_google_results_block(results)
+                            render_google_results_block(results, scan['data_type'], scan['search_data'])
 
                             # --- Section 3: Combined Risk & Playbook ---
                             # Show this section if either tool found something.
@@ -1395,263 +1318,29 @@ else:
                             else:
                                 st.info("No HIBP results available for this scan.")
                                                 
-
-                        # 2.5 (NEW) ENRICHED DOMAIN VIEW
-                        elif scan['data_type'] == 'domain':
-                            st.markdown("### 📈 Domain Intelligence Report")
-                            st.markdown("This report shows the public information available about your domain, including its ownership records and technical connections to the internet.")
-
-                            spiderfoot_result = results.get('spiderfoot')
-
-                            if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                                spiderfoot_data = spiderfoot_result["data"]
-                                
-                                whois_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_whois']
-                                if whois_results:
-                                    with st.container(border=True):
-                                        st.markdown("<h5>📝 Ownership & Registration Details (WHOIS)</h5>", unsafe_allow_html=True)
-                                        st.info("**What is this?** This is the official public record of who owns this domain, like a deed for a house.", icon="💡")
-
-                                        raw_whois = whois_results[0].get('data', '')
-                                        
-                                        st.markdown("---")
-                                        st.subheader("Key Information")
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            registrar = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Registrar:' in line), 'N/A')
-                                            st.metric(label="✅ Official Provider (Registrar)", value=registrar)
-                                        with col2:
-                                            creation_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Creation Date:' in line), 'N/A')
-                                            st.metric(label="📅 Registered On", value=creation_date_str.split('T')[0] if 'T' in creation_date_str else creation_date_str)
-                                        with col3:
-                                            expiry_date_str = next((line.split(': ')[1] for line in raw_whois.splitlines() if 'Expiry Date:' in line), 'N/A')
-                                            st.metric(label="⏳ Expires On", value=expiry_date_str.split('T')[0] if 'T' in expiry_date_str else expiry_date_str)
-                                        st.markdown("---")
-                                        
-                                        st.subheader("Why This Matters & Recommendations")
-                                        
-                                        if "REDACTED" in raw_whois or "Privacy" in raw_whois:
-                                            st.success("""
-                                                **✅ Good News: Your personal contact information appears to be private.**
-                                                The record shows that details like your name, address, and email are hidden. This is excellent for security, as it prevents spammers and scammers from harvesting your personal data from this public record.
-                                            """, icon="🛡️")
-                                        else:
-                                            st.error("""
-                                                **⚠️ High-Risk Alert: Your Personal Information is Public.**
-                                                The ownership record for this domain appears to contain public contact details (name, address, email). This is a significant privacy risk.
-                                                **💡 Recommendation:** Contact your domain provider (the 'Registrar' listed above) and ask to enable **"WHOIS Privacy"** or **"Domain Privacy Protection."** Most providers offer this service for free or a small fee to hide your personal details.
-                                            """, icon="🔥")
-
-                                        with st.expander("View the full raw technical record"):
-                                            st.code(raw_whois, language="text")
-
-                                dns_results = [r for r in spiderfoot_data if r.get('module') in ['sfp_dns', 'sfp_dnsresolve']]
-                                if dns_results:
-                                    with st.container(border=True):
-                                        st.markdown("<h5>📡 Website & Email Server Connections (DNS)</h5>", unsafe_allow_html=True)
-                                        st.info("**What is this?** These are the technical records that act like the internet's phonebook. They tell browsers where to find your website and email servers.", icon="💡")
-                                        
-                                        st.markdown("---")
-                                        st.subheader("Key Connections")
-
-                                        primary_ip = None
-                                        ipv4_candidate = None
-                                        ipv6_candidate = None
-                                        fallback_candidate = None
-
-                                        for item in dns_results:
-                                            item_type = item.get('type', '').upper()
-                                            item_data = item.get('data', '')
-                                            item_source = item.get('source', '')
-
-                                            if item_type == 'IP_ADDRESS':
-                                                ipv4_candidate = item_data
-                                                break
-
-                                            if item_type == 'IPV6_ADDRESS' and not ipv6_candidate:
-                                                ipv6_candidate = item_data
-                                            
-                                            if item_data == scan['search_data']:
-                                                if '.' in item_source or ':' in item_source:
-                                                    if not fallback_candidate:
-                                                        fallback_candidate = item_source
-
-                                        primary_ip = ipv4_candidate or ipv6_candidate or fallback_candidate
-
-                                        if primary_ip:
-                                            st.metric(label="🌐 Website's Digital Address (IP)", value=primary_ip)
-                                            st.markdown(f"This is the unique address of the server hosting your website. When someone types `{scan['search_data']}` into a browser, DNS tells it to go to `{primary_ip}`.")
-                                        else:
-                                            st.markdown("No primary website address (IP Address) was found in this scan.")
-
-                                        st.markdown("---")
-                                        st.subheader("Why This Matters")
-                                        st.markdown("""
-                                        These records are essential for your online presence to function. If they are incorrect, your website or email service could go offline. While they don't typically contain sensitive personal data themselves, they confirm that your domain is actively connected to the internet.
-                                        **💡 Recommendation:** No action is typically needed here unless you are experiencing technical issues with your website or email. This information is mainly for verification and technical troubleshooting.
-                                        """)
-
-                                        with st.expander("View all technical DNS records"):
-                                            for item in dns_results:
-                                                readable_type = item.get('type', 'N/A').replace('_', ' ').title()
-                                                st.markdown(f"**{readable_type}:** `{item.get('data', 'N/A')}`")
-                                # NEW: Catch-all for other unhandled DNS/intel results
-                                other_results = [
-                                    r for r in spiderfoot_data 
-                                    if r.get('module') not in ['sfp_whois', 'sfp_dns', 'sfp_dnsresolve']
-                                ]
-                                if other_results:
-                                    with st.container(border=True):
-                                        st.markdown("<h5>📝 Other Intelligence Findings</h5>", unsafe_allow_html=True)
-                                        # Group remaining items for a clean display
-                                        grouped_items = {}
-                                        for item in other_results:
-                                            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
-                                            if item_type not in grouped_items:
-                                                grouped_items[item_type] = []
-                                            grouped_items[item_type].append(item.get('data', 'N/A'))
-                                        
-                                        for item_type, data_list in sorted(grouped_items.items()):
-                                            st.markdown(f"**{item_type}** ({len(data_list)} found):")
-                                            for data_item in data_list:
-                                                st.code(data_item, language="text")
-                                            st.markdown("""<hr style="margin:0.5rem 0;" />""", unsafe_allow_html=True)
-
-                            else:
-                                st.info("No SpiderFoot results available for this scan.")
-
-                        # 2.6 (NEW) ENRICHED IP ADDRESS VIEW
-                        elif scan['data_type'] == 'ip':
-                            st.markdown("### 📈 IP Address Intelligence Report")
-                            st.markdown("This report shows public information about this IP address, including associated hostnames, open services, and its reputation.")
-
-                            spiderfoot_result = results.get('spiderfoot')
-
-                            if isinstance(spiderfoot_result, dict) and isinstance(spiderfoot_result.get("data"), list):
-                                spiderfoot_data = spiderfoot_result["data"]
-                                
-                                vt_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_virustotal']
-                                hostname_results = [r for r in spiderfoot_data if r.get('type', '').upper() == 'INTERNET_NAME']
-
-                                with st.container(border=True):
-                                    st.markdown("<h5>📝 Reputation & Associated Hostnames</h5>", unsafe_allow_html=True)
-                                    
-                                    if vt_results:
-                                        detections = vt_results[0].get('data', '0/0').split('/')[0]
-                                        if detections == "0":
-                                            st.success("**✅ Reputation Clean:** This IP was not found in any security blacklists on VirusTotal.", icon="🛡️")
-                                        else:
-                                            st.error(f"**🔥 Malicious Reputation:** This IP was flagged by **{detections}** security vendors on VirusTotal as potentially malicious.", icon="🚨")
-                                    else:
-                                        st.info("Reputation data not available for this IP.")
-
-                                    st.markdown("---")
-                                    if hostname_results:
-                                        st.markdown(f"**Found {len(hostname_results)} associated hostname(s):**")
-                                        for item in hostname_results:
-                                            st.code(item.get('data', 'N/A'), language="text")
-                                    else:
-                                        st.markdown("**No associated hostnames were found.** This could be a dynamic IP address or one not linked to a specific domain name.")
-
-                                shodan_results = [r for r in spiderfoot_data if r.get('module') == 'sfp_shodan']
-                                if shodan_results:
-                                    import json
-                                    shodan_data_str = shodan_results[0].get('data', '{}')
-                                    try:
-                                        shodan_data = json.loads(shodan_data_str)
-                                        
-                                        with st.container(border=True):
-                                            st.markdown(
-                                                "<h5>🔌 Open Services & Location (from Shodan)</h5>",
-                                                unsafe_allow_html=True,
-                                                help="Shodan scans the internet for devices. This data reveals what services are publicly accessible from this IP address."
-                                            )
-                                            
-                                            st.subheader("Location & Provider")
-                                            col1, col2, col3 = st.columns(3)
-                                            with col1:
-                                                st.metric("📍 Country", shodan_data.get('country_name', 'N/A'))
-                                            with col2:
-                                                st.metric("🏙️ City", shodan_data.get('city', 'N/A'))
-                                            with col3:
-                                                st.metric("🏢 ISP", shodan_data.get('isp', 'N/A'))
-                                            st.markdown("---")
-
-                                            st.subheader("Exposed Services / Open Ports")
-                                            if shodan_data.get('data'):
-                                                for service in shodan_data['data']:
-                                                    port = service.get('port', 'N/A')
-                                                    service_name = service.get('product', 'Unknown Service')
-                                                    transport = service.get('transport', 'tcp').upper()
-                                                    st.error(f"**Port {port}/{transport}:** Running `{service_name}`", icon="⚠️")
-                                            else:
-                                                st.success("✅ No open ports or exposed services were identified by Shodan.")
-                                            
-                                            st.markdown("---")
-                                            st.subheader("Why This Matters")
-                                            st.warning("""
-                                            **Exposed services can be a major security risk.** Each open port is a potential entry point for attackers. Services like databases (MySQL, PostgreSQL) or remote access (SSH, RDP) should almost never be exposed directly to the public internet.
-                                            **💡 Recommendation:** If this is your IP address, review the list above. Any service that is not intentionally public should be firewalled. Ensure all public services are up-to-date and securely configured.
-                                            """)
-                                            with st.expander("View full raw Shodan data"):
-                                                st.json(shodan_data)
-
-                                    except json.JSONDecodeError:
-                                        st.error("Could not parse raw Shodan data.")
-                                # NEW: Catch-all for other unhandled intel results
-                                other_results = [
-                                    r for r in spiderfoot_data 
-                                    if r.get('module') not in ['sfp_virustotal', 'sfp_shodan'] and r.get('type', '').upper() != 'INTERNET_NAME'
-                                ]
-                                if other_results:
-                                    with st.container(border=True):
-                                        st.markdown("<h5>📝 Other Intelligence Findings</h5>", unsafe_allow_html=True)
-                                        # Group remaining items for a clean display
-                                        grouped_items = {}
-                                        for item in other_results:
-                                            item_type = item.get('type', 'UNCATEGORIZED').replace("_", " ").title()
-                                            if item_type not in grouped_items:
-                                                grouped_items[item_type] = []
-                                            grouped_items[item_type].append(item.get('data', 'N/A'))
-                                        
-                                        for item_type, data_list in sorted(grouped_items.items()):
-                                            st.markdown(f"**{item_type}** ({len(data_list)} found):")
-                                            for data_item in data_list:
-                                                st.code(data_item, language="text")
-                                            st.markdown("""<hr style="margin:0.5rem 0;" />""", unsafe_allow_html=True)
-                            else:
-                                st.info("No SpiderFoot results available for this scan.")
                         
                         # 4. PHONE & IC VIEW
-                        elif scan['data_type'] in ("phone", "ic"):
+                        elif scan['data_type'] in ("phone", "ic", "full_name"):
                             # NEW: Conditional title and icon based on the specific data type
                             if scan['data_type'] == 'ic':
                                 st.markdown("### 🪪 Public Exposure Analysis")
+                            elif scan['data_type'] == 'full_name': # <--- ADD THIS LINE
+                                st.markdown("### 👤 Public Exposure Analysis") # <--- ADD THIS LINE
                             else:
                                 st.markdown("### 📞 Public Exposure Analysis")
 
-                            render_google_results_block(results)
+                            render_google_results_block(results, scan['data_type'], scan['search_data'])
                             google_result = results.get("google_dork", {})
                             google_list = google_result.get("data", []) if isinstance(google_result, dict) else []
 
                             if google_list:
-                                # --- CONTEXTUAL RISK ANALYSIS ---
+                                playbook = get_playbook_for_scan(scan['data_type'])
                                 st.markdown("---")
                                 st.error("🚨 What is the Risk? (HIGH)", icon="🔥")
-                                st.markdown("""
-                                Having your phone number or IC number publicly exposed online is a **HIGH** risk. Scammers and identity thieves actively search for this information. They can use it to:
-                                - **Target You with Scams:** You may receive an increase in spam calls and phishing text messages (SMSishing) trying to trick you into giving away money or passwords.
-                                - **Commit Identity Theft:** Your IC number is a key piece of information used to impersonate you, open fraudulent accounts, or apply for loans in your name.
-                                - **Hijack Your Accounts:** Many online services use your phone number for account recovery. An attacker could use this to try and take over your accounts (an attack called "SIM-swapping", where a scammer tricks your mobile provider into moving your number to their phone).
-                                """)
+                                st.markdown(playbook['risk'])
 
                                 st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                                st.markdown("""
-                                1.  **Investigate the Source:** Carefully review the links found above to understand why your information is public.
-                                2.  **Request Takedown:** If the information is on a website you don't control (like a forum or public directory), contact the website's administrator and formally request that they remove your personal information.
-                                3.  **Remove it Yourself:** If it's a post you made on social media or a forum, log in and delete it immediately.
-                                4.  **Be Extra Cautious:** Be extremely wary of unsolicited calls or text messages. Never give out personal information or one-time codes (OTPs) to anyone who contacts you unexpectedly.
-                                """)
+                                st.markdown(playbook['playbook'])
                                 
                         elif scan['data_type'] == "github_repo":
                             st.markdown("### 🔑 GitHub Repository Exposure Analysis")
@@ -1752,10 +1441,6 @@ else:
             "🌐 Google Custom Search": { 
                 "purpose": "Uses targeted search queries to find data indexed on the public web.", 
                 "scans": ["Phone Numbers", "IC Numbers"] 
-            },
-            "🕷️ SpiderFoot": { 
-                "purpose": "Automated OSINT to gather public intelligence on internet assets.", 
-                "scans": ["Domain & IP Intelligence", "Public Server Information (WHOIS, DNS)"] 
             },
             "🕵️ Sherlock": { 
                 "purpose": "Hunts down social media and forum accounts by username.", 
@@ -1980,7 +1665,6 @@ else:
             - **Public Web Pages:** Using targeted searches to find indexed information on websites and public documents (via Google Custom Search).
             - **Social Media & Forums:** Searching for public profiles across hundreds of sites that match a username (via Sherlock).
             - **Known Data Breaches:** Checking against a large, aggregated database of credentials from past public breaches (via HIBP).
-            - **Domain & IP Records:** Querying public records like WHOIS and DNS to understand a domain's footprint (via SpiderFoot).
 
             We **do not** access private databases or systems. All scans are performed within the bounds of ethical open-source intelligence gathering.
             """)
@@ -2120,7 +1804,6 @@ else:
         - **🔑 TruffleHog:** Scans public GitHub repositories for exposed API keys, passwords, and other secrets.
         - **🕵️ Sherlock:** Hunts for your username across hundreds of social media sites and online communities.
         - **📧 HIBP API:** Checks if your email or password has appeared in thousands of known public data breaches.
-        - **🕷️ SpiderFoot:** Gathers public intelligence on domains and IPs to map your digital footprint.
         - **🌐 Google Custom Search:** Uses targeted queries to find sensitive information exposed on the public web.
         """)
         

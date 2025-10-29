@@ -116,11 +116,6 @@ async def get_supported_data_types():
                 "pattern": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
                 "description": "Domain name format"
             },
-            "ip": {
-                "name": "IP Address",
-                "pattern": r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
-                "description": "IPv4 address format"
-            },
             "credit_card": {
                 "name": "Credit Card Number",
                 "pattern": r"^(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})$",
@@ -130,6 +125,11 @@ async def get_supported_data_types():
                 "name": "IC Number",
                 "pattern": r"^\d{6}-\d{2}-\d{4}$",
                 "description": "Malaysian IC number format (YYMMDD-PB-GGGG)"
+            },
+            "full_name": { 
+                "name": "Full Name",
+                "pattern": r"^[A-Za-z\s.'@]+$",
+                "description": "Full name as per identification documents"
             },
             "api_key": {
                 "name": "API Keys/Tokens",
@@ -160,12 +160,6 @@ async def get_available_tools():
                 "name": "theHarvester",
                 "description": "Email and domain harvesting",
                 "capabilities": ["emails", "domains", "subdomains"],
-                "status": "active"
-            },
-            "spiderfoot": {
-                "name": "SpiderFoot",
-                "description": "Automated reconnaissance",
-                "capabilities": ["domains", "ips", "social_media", "dark_web"],
                 "status": "active"
             },
             "sherlock": {
