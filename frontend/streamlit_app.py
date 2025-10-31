@@ -724,6 +724,61 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
             pdf.multi_cell(0, 6, step)
             pdf.ln(2)
 
+    # --- NEW: 5. MALAYSIAN AUTHORITIES HELP SECTION ---
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Get Help from Malaysian Authorities", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+    pdf.ln(5)
+
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(0, 5,
+        "If your personal data has been exposed online, you can file official reports with the following Malaysian authorities to request takedowns and file formal complaints.",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(10)
+
+    # --- Authority 1: CyberSecurity Malaysia ---
+    try:
+        img_width = 50
+        x_centered = (210 - img_width) / 2
+        pdf.image("assets/cybersecurity_logo.png", x=x_centered, w=img_width)
+        pdf.ln(2) 
+    except FileNotFoundError:
+        pdf.cell(0, 10, "[CyberSecurity Malaysia Logo]", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "CyberSecurity Malaysia (Cyber999)", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(0, 5,
+        "Provides the Cyber999 Help Centre to report online security incidents, including data leaks, identity theft, and harassment.",
+        align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.multi_cell(0, 5, "Report at: https://www.mycert.org.my/cyber999", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(15)
+
+    # --- Authority 2: JPDP ---
+    try:
+        img_width = 50 
+        x_centered = (210 - img_width) / 2
+        pdf.image("assets/jpdp_logo.png", x=x_centered, w=img_width)
+        pdf.ln(2)
+    except FileNotFoundError:
+        pdf.cell(0, 10, "[JPDP Logo]", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "Jabatan Perlindungan Data Peribadi (JPDP)", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(0, 5,
+        "Handles violations of the Personal Data Protection Act (PDPA). File a complaint if you believe a company has misused or failed to protect your personal data.",
+        align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.multi_cell(0, 5, "File a complaint at: https://www.pdp.gov.my/jpdpv2/ms/aduan/", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
     return pdf_to_bytes(pdf)
 
 # HELPER FUNCTION TO RENDER SEVERITY BADGES
@@ -1440,7 +1495,7 @@ else:
             },
             "🌐 Google Custom Search": { 
                 "purpose": "Uses targeted search queries to find data indexed on the public web.", 
-                "scans": ["Phone Numbers", "IC Numbers"] 
+                "scans": ["Full Name", "Phone Numbers", "IC Numbers"]
             },
             "🕵️ Sherlock": { 
                 "purpose": "Hunts down social media and forum accounts by username.", 
@@ -1690,114 +1745,253 @@ else:
 
     elif selected == "Homepage":
         st.markdown("""
-            <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 1.5rem; margin-bottom:1rem;'>
-                <h1 style='color: #FFFFFF;'>👋 Welcome to the Data Leakage Monitoring System</h1>
-                <p style='color: #FFFFFF; font-size: 1.1rem;'>An open-source platform to help you monitor, detect, and protect your personal data exposure online.</p>
+            <style>
+                .step-container {
+                    display: flex;
+                    align-items: center;
+                    background-color: #F8F9FA;
+                    border-left: 5px solid #f39c12;
+                    padding: 1rem;
+                    margin-bottom: 1rem;
+                    border-radius: 5px;
+                }
+                .step-icon {
+                    font-size: 2.5rem;
+                    margin-right: 1.5rem;
+                }
+                .step-text h4 {
+                    margin-bottom: 0.2rem;
+                    color: #2c3e50;
+                }
+                .step-text p {
+                    margin-bottom: 0;
+                    color: #495057;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+            <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 2rem; margin-bottom:1.5rem;'>
+                <h1 style='color: #FFFFFF;'>Is Your Digital Life Truly Private?</h1>
+                <p style='color: #FFFFFF; font-size: 1.15rem;'>Let's explore what 'data leakage' means and how to protect the information you share online.</p>
             </div>
         """, unsafe_allow_html=True)
+
+        # --- Section 1: What Exactly is a Data Leak? ---
+        st.subheader("🤔 What Exactly is a Data Leak?")
+        with st.expander("Imagine a data leak is like dropping your wallet in a crowded place... it's the digital version of that."):
+            st.markdown("""
+            It means your **private information** (like an email address, password, or phone number) has been unintentionally exposed on the public internet.
+
+            Once it's out there, anyone—including criminals—can find and use it. This is why understanding your digital footprint is so important.
+            """)
+        st.markdown("---")
+
+        # --- Section 2: How a Small Leak Becomes a Big Problem ---
+        st.subheader("Domino Effect: How a Small Leak Becomes a Big Problem")
+        st.info("Click on the tabs below to see how a single piece of your data can be exploited.")
+
+
+        email_tab, phone_tab, password_tab = st.tabs(["**With Your Email Address**", "**With Your Phone Number**", "**With a Leaked Password**"])
+
+        with email_tab:
+            st.markdown("""
+            <div class="step-container">
+                <div class="step-icon">📧</div>
+                <div class="step-text">
+                    <h4>Step 1: They find your leaked email and password from a company's data breach.</h4>
+                    <p>For example, a shopping website you used years ago gets hacked.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">🔑</div>
+                <div class="step-text">
+                    <h4>Step 2: They try that same email and password on other major websites.</h4>
+                    <p>They hope you reused the password for your email, social media, or banking accounts.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">🎭</div>
+                <div class="step-text">
+                    <h4>Step 3: If they get in, they can lock you out, steal your identity, or scam your friends.</h4>
+                    <p>This is called an "Account Takeover," and it's a very serious risk.</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with phone_tab:
+            st.markdown("""
+            <div class="step-container">
+                <div class="step-icon">📱</div>
+                <div class="step-text">
+                    <h4>Step 1: A scammer finds your phone number and full name online.</h4>
+                    <p>It might be publicly listed on a social media profile or an old website.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">🎣</div>
+                <div class="step-text">
+                    <h4>Step 2: They send you a very convincing text message (a "smishing" attack).</h4>
+                    <p>The message might look like it's from your bank or a delivery service, asking you to click a link.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">💸</div>
+                <div class="step-text">
+                    <h4>Step 3: If you click the link, it might install malware or take you to a fake website to steal your login info.</h4>
+                    <p>They can also use your number to target you with scam phone calls.</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with password_tab:
+            st.markdown("""
+            <div class="step-container">
+                <div class="step-icon">🔓</div>
+                <div class="step-text">
+                    <h4>Step 1: Your password from an old account is exposed in a data breach.</h4>
+                    <p>This password is now on public lists that hackers share and use.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">🤖</div>
+                <div class="step-text">
+                    <h4>Step 2: Hackers use software to automatically try that password on thousands of popular sites.</h4>
+                    <p>This is called "Credential Stuffing." It's a fast and easy way for them to find your other accounts if you reuse passwords.</p>
+                </div>
+            </div>
+            <div class="step-container">
+                <div class="step-icon">🚨</div>
+                <div class="step-text">
+                    <h4>Step 3: Any account using that password is now at critical risk of being taken over.</h4>
+                    <p>This highlights why using a unique password for every single account is so important.</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
         
-        # --- NEW: PROMINENT LOGIN CALL-TO-ACTION FOR GUESTS ---
+        # --- Prominent Login for Guests ---
         if 'user' not in st.session_state:
-            st.subheader("Get Started")
+            st.subheader("Ready to Check Your Own Digital Footprint?")
             with st.container(border=True):
-                st.markdown("#### Ready to secure your digital footprint?")
-                st.markdown("Sign in to access your private dashboard, view detailed reports, and manage your scan history.")
+                st.markdown("#### Sign in to use our free scanner.")
+                st.markdown("You can check your email, username, phone number, and more against public data leaks. Get a private dashboard, view detailed reports, and receive simple advice to improve your security.")
                 auth_url = get_authorization_url()
-                st.link_button("Sign in ", auth_url, use_container_width=True)
+                st.link_button("Sign in to Scan Now", auth_url, use_container_width=True)
             st.markdown("---")
-        # --- END OF NEW SECTION ---
-
-        st.subheader("🔍 What This System Can Do")
-        col1, col2, col3 = st.columns(3, gap="large")
-        with col1:
-            with st.container(border=True):
-                st.markdown(
-                    """
-                    <div style="text-align:center;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/3502/3502601.png" width="50">
-                        <h3>Automated Leak Scanning</h3>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.write("Search public platforms for exposed data.")
-        with col2:
-            with st.container(border=True):
-                st.markdown(
-                    """
-                    <div style="text-align:center;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/1055/1055645.png" width="50">
-                        <h3>Understand Results</h3>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.write("Get clear results on what was found and why it matters.")
-        with col3:
-            with st.container(border=True):
-                st.markdown(
-                    """
-                    <div style="text-align:center;">
-                        <img src="https://cdn-icons-png.flaticon.com/512/942/942792.png" width="50">
-                        <h3>Protect Your Identity</h3>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                st.write("Receive simple, non-technical steps to improve your security.")
+        
+        # --- How to Protect Yourself Section (Now 4 Steps) ---
+        st.subheader("🛡️ How You Can Protect Yourself: 4 Simple Steps")
+        with st.expander("**Step 1: Use a Password Manager (Most Important)**"):
+             st.markdown("""
+            ✅ This is the single most effective thing you can do for your online security. A password manager creates and remembers strong, unique passwords for every site, so you don't have to.
+            """)
+        with st.expander("**Step 2: Enable Two-Factor Authentication (2FA)**"):
+            st.markdown("""
+            ✅ This is your security backup. It requires a code from your phone to log in. Even if a hacker has your password, they can't get into your account without your phone.
+            """)
+        with st.expander("**Step 3: Think Before You Click and Share**"):
+            st.markdown("""
+            ✅ This is about being careful. Be suspicious of urgent emails or texts, and check your social media privacy settings to avoid sharing sensitive data publicly.
+            """)
+        with st.expander("**Step 4 (Local Tip): Verify Accounts with 'Semak Mule'**"):
+            st.markdown("""
+            ✅ Before you transfer money to an unknown person or online seller, check their bank account or phone number on the PDRM's **Semak Mule portal**. It is a free, official tool that tells you if an account has been reported for scam activities.
+            """)
+            st.link_button("Check an Account on Semak Mule ➜", "https://semakmule.rmp.gov.my/")
 
         st.markdown("---")
-        # --- 3. NEW SECTION: WHY IT MATTERS ---
-        # --- WHY IT MATTERS SECTION (with larger, more readable text) ---
-        st.subheader("👣 Why Your Digital Footprint Matters")
-        st.markdown("Every day, personal data is leaked online. This exposure can lead to serious consequences.")
-        col1, col2, col3 = st.columns(3, gap="large")
+
+        # --- UPDATED CARD-BASED LAYOUT FOR LOCAL THREATS ---
+        st.subheader("Local Threats: What to Watch Out For in Malaysia")
+        st.markdown("Scammers often use your leaked personal data—like your phone number or name—as a starting point. Here are some of the common ways they exploit that information in Malaysia.")
+        
+        # --- ROW 1 of cards ---
+        col1, col2 = st.columns(2, gap="large")
+
         with col1:
-            st.markdown("""
-                <div style='text-align:center'>
-                    <p style='font-size: 2rem;'>💰</p>
-                    <h4 style='margin-bottom: 0.5rem;'>Financial Fraud</h4>
-                    <p>Stolen credit cards or bank details can be used for unauthorized purchases.</p>
-                </div>
-            """, unsafe_allow_html=True)
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col:
+                    st.image("assets/stats.png", width=48)
+                with title_col:
+                    st.markdown("<h5><b>Fake Job & Investment Scams</b></h5>", unsafe_allow_html=True)
+
+                st.markdown("""
+                You get an unsolicited offer on WhatsApp for an easy, high-paying job. They pay you a little at first to build trust, then ask you to pay for an "upgrade" to earn more, which you will lose.
+                
+                **Remember:** Be wary of offers that seem too good to be true.
+                """)
+
         with col2:
-            st.markdown("""
-                <div style='text-align:center'>
-                    <p style='font-size: 2rem;'>🎭</p>
-                    <h4 style='margin-bottom: 0.5rem;'>Identity Theft</h4>
-                    <p>Leaked personal info can be used to open accounts or commit crimes in your name.</p>
-                </div>
-            """, unsafe_allow_html=True)
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col:
+                    st.image("assets/Beware_ic.png", width=48)
+                with title_col:
+                    st.markdown("<h5><b>Your IC Number (MyKad)</b></h5>", unsafe_allow_html=True)
+                
+                st.markdown("""
+                Scammers use your name and IC number to impersonate you or make their scams more convincing.
+                
+                **Remember:** Never post a photo of your MyKad online and only provide it to trusted, official organizations when absolutely necessary.
+                """)
+
+        # --- ROW 2 of cards ---
+        col3, col4 = st.columns(2, gap="large")
+
         with col3:
-            st.markdown("""
-                <div style='text-align:center'>
-                    <p style='font-size: 2rem;'>📧</p>
-                    <h4 style='margin-bottom: 0.5rem;'>Targeted Phishing</h4>
-                    <p>Hackers use leaked data to create convincing scams to trick you into revealing more.</p>
-                </div>
-            """, unsafe_allow_html=True)
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col:
+                    st.image("assets/phone_scam.png", width=48)
+                with title_col:
+                    st.markdown("<h5><b>Impersonation Phone Scams</b></h5>", unsafe_allow_html=True)
+                
+                st.markdown("""
+                Scammers often pretend to be from LHDN, PDRM, or PosLaju, claiming you owe taxes or are linked to a crime.
+
+                **Remember:** Authorities **NEVER** ask for money transfers to personal accounts over the phone. If a call feels wrong, hang up and call their official hotline.
+                """)
+
+        with col4:
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col:
+                    st.image("assets/otp.png", width=48)
+                with title_col:
+                    st.markdown("<h5><b>The TAC / OTP Code Scam</b></h5>", unsafe_allow_html=True)
+                
+                st.markdown("""
+                Someone asks you to forward a 6-digit code they "accidentally" sent to your number. In reality, that is the login code for **YOUR** account.
+                
+                **Remember: NEVER** share a 6-digit code from an SMS with anyone. It is for your eyes only.
+                """)
+        
         st.markdown("---")
-        # --- 4. NEW SECTION: HOW IT WORKS ---
-        st.subheader("⚙️ A Simple, Powerful Process")
-        col1, col2, col3 = st.columns(3, gap="large")
+
+        # --- Get Help from Malaysian Authorities ---
+        st.subheader("Get Help from Malaysian Authorities")
+        st.markdown("If you've found your personal data exposed online, you can report it to the official channels below to request takedowns and file complaints.")
+
+        col1, col2 = st.columns(2, gap="large")
+
         with col1:
-            st.markdown("### 1. Provide Input\nSelect a data type (like an email or username) and enter the information you want to check.", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.image("assets/cybersecurity_logo.png", width=90)
+                st.markdown("CyberSecurity Malaysia provides the **Cyber999 Help Centre** for you to report online security incidents, including data leaks, identity theft, and harassment.")
+                st.link_button("Report to Cyber999 ➜", "https://www.mycert.org.my/cyber999")
+
         with col2:
-            st.markdown("### 2. Intelligent Scanning\nOur system intelligently selects the best tools for the job. Based on your chosen data type, we run targeted scans against the most relevant sources.", unsafe_allow_html=True)
-        with col3:
-            st.markdown("### 3. Get Unified Results\nWe consolidate all findings into a single, easy-to-read report in your 'Scan History' with clear recommendations.", unsafe_allow_html=True)
-        # --- 5. SECURITY TIP (MOVED HERE) ---
-        st.subheader("💡 Security Tip of the Day")
-        tips = [
-            ("🔐 Use a Password Manager", "Tools like Bitwarden or 1Password create and store strong, unique passwords for every account, which is the single best thing you can do for your security."),
-            ("🤔 Think Before You Click", "Be cautious of phishing emails and messages. Never click suspicious links or download unexpected attachments. Always verify the sender."),
-            ("🔑 Enable Two-Factor Authentication (2FA)", "2FA adds a critical second layer of security to your accounts, requiring a code from your phone in addition to your password."),
-        ]
-        tip_title, tip_body = random.choice(tips)
-        with st.container(border=True):
-            st.markdown(f"#### {tip_title}")
-            st.markdown(tip_body)
+            with st.container(border=True):
+                st.image("assets/jpdp_logo.png", width=90)
+                st.markdown("The JPDP handles violations of the Personal Data Protection Act (PDPA). File a complaint if you believe a **company has misused or failed to protect** your personal data.")
+                st.link_button("File a Complaint with JPDP ➜", "https://www.pdp.gov.my/jpdpv2/ms/aduan/")
+
         st.markdown("---")
+
+        # --- Footer sections ---
         st.subheader("🛠️ Powered by Leading Open-Source Tools")
         st.markdown("""
         Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:
@@ -1806,8 +2000,6 @@ else:
         - **📧 HIBP API:** Checks if your email or password has appeared in thousands of known public data breaches.
         - **🌐 Google Custom Search:** Uses targeted queries to find sensitive information exposed on the public web.
         """)
-        
         st.markdown("---")
-        
         st.success("🔐 **Your Privacy is Our Priority:** Scan inputs are saved to your private history and auto-deleted after 14 days. All scans use public data only.")
         render_footer()
