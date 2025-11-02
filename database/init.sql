@@ -1,6 +1,3 @@
-CREATE DATABASE dlms_db;
-\c dlms_db
-
 CREATE TABLE scan_jobs (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR,
@@ -10,7 +7,8 @@ CREATE TABLE scan_jobs (
     status VARCHAR(20) DEFAULT 'pending',
     total_tools INTEGER DEFAULT 5,
     completed_tools INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    scan_source VARCHAR(20) DEFAULT 'manual' NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE scan_results (
@@ -57,7 +55,6 @@ CREATE TABLE alerts (
 );
 
 -- Create indexes for better performance
-CREATE INDEX idx_scan_jobs_asset_id ON scan_jobs(asset_id);
 CREATE INDEX idx_scan_jobs_status ON scan_jobs(status);
 CREATE INDEX idx_scan_results_job_id ON scan_results(job_id);
 CREATE INDEX idx_tool_status_job_id ON tool_status(job_id);
@@ -66,6 +63,3 @@ CREATE INDEX idx_alerts_asset_id ON alerts(asset_id);
 -- Insert sample data (optional for testing)
 INSERT INTO monitored_assets (user_id, data_type, search_data)
 VALUES ('testuser', 'email', 'user@example.com');
-
--- Display created tables
-\dt

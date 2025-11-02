@@ -1,0 +1,24 @@
+# docker/Dockerfile.frontend
+
+# Use a modern, slim Python image. Using 3.9 to match your backend is fine too.
+FROM python:3.11-slim
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the frontend requirements file from the project root.
+# This path works because the build context is the project root (context: .).
+COPY requirements/frontend.txt .
+
+# Install the Python dependencies
+RUN pip install --no-cache-dir -r frontend.txt
+
+# Copy the entire 'frontend' directory from the project root
+# into the container's working directory (/app).
+COPY frontend/ .
+
+# Expose the port Streamlit runs on
+EXPOSE 8501
+
+# The command to start the Streamlit application
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]

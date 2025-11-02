@@ -24,6 +24,7 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 load_dotenv()
 
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Data Leakage Monitoring System",
@@ -185,7 +186,7 @@ def get_scan_history():
             if not user_id:
                 return [] # Return empty list if user_id is missing
             
-            api_url = f"http://localhost:8000/scan-history/{user_id}"
+            api_url = f"{BACKEND_URL}/scan-history/{user_id}"
             res = requests.get(api_url)
 
             if res.status_code == 200:
@@ -201,7 +202,7 @@ def get_scan_history():
             
             if guest_scan_id:
                 # Use the new public endpoint to get only this specific scan
-                api_url = f"http://localhost:8000/scan/{guest_scan_id}"
+                api_url = f"{BACKEND_URL}/scan/{guest_scan_id}"
                 res = requests.get(api_url)
 
                 if res.status_code == 200:
@@ -903,7 +904,7 @@ def render_google_results_block(results, scan_type, search_data):
 
 # --- BACKEND CONNECTION TEST ---
 try:
-    requests.get("http://localhost:8000/health", timeout=2)
+    requests.get(f"{BACKEND_URL}/health", timeout=2)
 except Exception:
     pass # Keep it silent
 
@@ -1049,7 +1050,7 @@ else:
                     
                     try:
                         # 3. Make a direct request to the backend to get the scan_id
-                        response = requests.post("http://localhost:8000/scan/start", json=payload, timeout=10)
+                        response = requests.post(f"{BACKEND_URL}/scan/start", json=payload, timeout=10)
 
                         if response.status_code == 202: # Check for the 'Accepted' status code
                             scan_id = response.json().get("scan_id")
@@ -1553,7 +1554,7 @@ else:
             # --- Section for Alerts ---
             st.subheader("🚨 Recent Alerts")
             try:
-                alert_res = requests.get(f"http://localhost:8000/monitoring/alerts/{user_id}")
+                alert_res = requests.get(f"{BACKEND_URL}/monitoring/alerts/{user_id}")
                 if alert_res.status_code == 200:
                     all_alerts = alert_res.json()
                     
@@ -1576,7 +1577,7 @@ else:
 
                             with col2:
                                 if st.button("Dismiss", key=f"dismiss_{alert['id']}", use_container_width=True):
-                                    dismiss_res = requests.put(f"http://localhost:8000/monitoring/alerts/{alert['id']}/read")
+                                    dismiss_res = requests.put(f"{BACKEND_URL}/monitoring/alerts/{alert['id']}/read")
                                     if dismiss_res.status_code == 200:
                                         st.rerun()
                                     else:
@@ -1623,7 +1624,7 @@ else:
                                 "search_data": asset_data.strip()
                             }
                             try:
-                                response = requests.post("http://localhost:8000/monitoring/assets", json=payload)
+                                response = requests.post(f"{BACKEND_URL}/monitoring/assets", json=payload)
                                 if response.status_code == 201:
                                     st.success(f"Successfully added '{asset_data}' to the monitoring list!")
                                     st.rerun()
@@ -1640,7 +1641,7 @@ else:
             # --- Section to display and manage current assets ---
             st.subheader("Currently Monitored Assets")
             try:
-                res = requests.get(f"http://localhost:8000/monitoring/assets/{user_id}")
+                res = requests.get(f"{BACKEND_URL}/monitoring/assets/{user_id}")
                 if res.status_code == 200:
                     assets = res.json()
                     
@@ -1672,7 +1673,7 @@ else:
                                     st.write(f"Last Scanned: {last_scan}")
                             with col4:
                                 if st.button("Delete", key=f"del_{asset['id']}", use_container_width=True):
-                                    del_res = requests.delete(f"http://localhost:8000/monitoring/assets/{asset['id']}")
+                                    del_res = requests.delete(f"{BACKEND_URL}/monitoring/assets/{asset['id']}")
                                     if del_res.status_code == 204:
                                         st.success("Asset removed.")
                                         st.rerun()
