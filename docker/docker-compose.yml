@@ -46,9 +46,9 @@ services:
       - backend
     environment:
       - BACKEND_URL=http://backend:8000
-      - AUTH0_DOMAIN="dev-jbg0jvh0nbue44jd.us.auth0.com"
-      - AUTH0_CLIENT_ID="rMxHInqOgxjuN0IerUmikJ6PnjDGOD18"
-      - AUTH0_CLIENT_SECRET="Q5ZkzSJ10YoGTJiqnyvCN4YnIiircE8gGz7LvKNNIjm1MapDnBjPdmnlHDH-emH"
+      - AUTH0_DOMAIN=dev-jbg0jvh0nbue44jd.us.auth0.com
+      - AUTH0_CLIENT_ID=rMxHInqQgxjuN0IerUmikJ6PnjDGOd18
+      - AUTH0_CLIENT_SECRET=Q5ZkzSJj10YoGTJiqnyvCN4YnIiircE8gGz7LvKNNijmlMapDnBjPdmnlHDH-emH
     networks:
       - dlms_network
 

@@ -1,4 +1,4 @@
-# In app/utils/scheduler_jobs.py
+# In backend/app/utils/scheduler_jobs.py
 import logging
 import json
 import hashlib
@@ -14,76 +14,124 @@ logger = logging.getLogger(__name__)
 
 async def run_scan_and_update_asset(asset_id: int, scan_request: ScanRequest):
     """
-    Runs a scan for a specific asset and updates its timestamp upon completion.
-    This is designed to be called by a background task.
+    Runs an immediate scan for a newly created asset and handles hashing and alerting.
     """
     logger.info(f"BACKGROUND_TASK: Starting immediate scan for asset ID {asset_id}...")
     
-    # Run the scan job; it returns the new scan_id
-    scan_id = start_scan_job(scan_request, scan_source="automated")
-
-    if not scan_id:
-        logger.error(f"BACKGROUND_TASK: Scan failed to start for asset {asset_id}. Timestamp not updated.")
-        return
-
-    # After the scan completes, create a new session to update the asset
     db = SessionLocal()
+    scan_id = None
     try:
-        asset = db.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset_id).first()
-        if asset:
-            asset.last_scanned_at = datetime.utcnow()
-            db.commit()
-            logger.info(f"BACKGROUND_TASK: Successfully updated timestamp for asset ID {asset_id}.")
-        else:
-            logger.warning(f"BACKGROUND_TASK: Could not find asset ID {asset_id} to update timestamp.")
-    finally:
-        db.close()
+        # Step 1: Create the ScanJob record.
+        scan_job = models.ScanJob.create(
+            db=db,
+            user_id=scan_request.user_id,
+            data_type=scan_request.data_type,
+            search_data=scan_request.search_data,
+            status="pending",
+            created_at=datetime.utcnow(),
+            scan_source="automated",
+            custom_regex=None
+        )
+        if not scan_job:
+            raise Exception("Failed to create ScanJob in database.")
         
+        scan_id = scan_job.id
+        logger.info(f"BACKGROUND_TASK: Created pending Job ID {scan_id} for immediate scan.")
+
+        # Step 2: Run the scan.
+        start_scan_job(scan_request, scan_source="automated", scan_id=scan_id)
+        
+        # --- START OF NEW LOGIC ---
+        # Step 3: Calculate the hash of the new results.
+        new_hash = get_results_hash(db, scan_id)
+        asset = db.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset_id).first()
+
+        if not asset:
+            logger.warning(f"BACKGROUND_TASK: Could not find asset ID {asset_id} to update.")
+            return
+
+        logger.info(f"BACKGROUND_TASK: Asset {asset_id} - Previous Hash: {asset.previous_results_hash}, New Hash: {new_hash}")
+
+        # Step 4: Compare hashes and create an alert if they differ.
+        if new_hash != asset.previous_results_hash:
+            logger.warning(f"BACKGROUND_TASK: New findings detected for asset {asset_id} on its first scan!")
+            models.Alert.create(
+                db=db,
+                asset_id=asset.id,
+                user_id=asset.user_id,
+                scan_id=scan_id,
+                message=f"New potential leaks found for '{asset.search_data}'."
+            )
+            asset.previous_results_hash = new_hash
+        # --- END OF NEW LOGIC ---
+
+        # Step 5: Update the timestamp.
+        asset.last_scanned_at = datetime.utcnow()
+        db.commit()
+        logger.info(f"BACKGROUND_TASK: Successfully processed immediate scan and updated asset ID {asset_id}.")
+
+    except Exception as e:
+        logger.error(f"BACKGROUND_TASK: An error occurred during immediate scan for asset {asset_id}. Error: {e}", exc_info=True)
+        if db:
+            db.rollback()
+    finally:
+        if db:
+            db.close()
+
+# --- The rest of the file remains the same ---
 def get_results_hash(db: Session, scan_id: int) -> str:
     """
     Fetches all results for a given scan_id, creates a consistent JSON string,
-    and returns its SHA256 hash.
+    and returns its SHA256 hash. This is the final, most robust version.
     """
     results = db.query(models.ScanResult).filter(models.ScanResult.job_id == scan_id).order_by(models.ScanResult.id).all()
     if not results:
         return hashlib.sha256("".encode()).hexdigest()
 
-    results_list = []
-    for r in results:
-        # --- START OF THE FIX ---
-        # Create a copy of the data to avoid modifying the original
-        data_to_hash = r.result_data
-        
-        # If the data is a list (like Sherlock's URLs), sort it to ensure a consistent order
-        if isinstance(data_to_hash, list):
-            # We must handle lists of dictionaries and lists of strings differently
-            try:
-                # This works for simple lists of strings, numbers, etc.
-                data_to_hash.sort()
-            except TypeError:
-                # This handles lists of dictionaries by turning them into a sorted string representation
-                data_to_hash = sorted([json.dumps(item, sort_keys=True) for item in data_to_hash])
-        # --- END OF THE FIX ---
+    # We will build a list of canonical strings for each result set to sort them reliably
+    all_results_canonical_strings = []
 
-        results_list.append({
+    for r in results:
+        result_data_string = ""
+        # --- THIS IS THE BULLETPROOF FIX ---
+        # If the result data is a list, we will convert it to a sorted list of strings
+        if isinstance(r.result_data, list):
+            if not r.result_data:
+                # Handle empty list case
+                result_data_string = "[]"
+            else:
+                # Convert each item in the list to a canonical JSON string
+                # This handles both simple strings (Sherlock) and complex dicts (TruffleHog)
+                string_list = [json.dumps(item, sort_keys=True) for item in r.result_data]
+                # Sort the list of strings
+                string_list.sort()
+                # Join them into a single string representation of the sorted list
+                result_data_string = f"[{','.join(string_list)}]"
+        else:
+            # For any other data type (like a single dict), just create a canonical string
+            result_data_string = json.dumps(r.result_data, sort_keys=True)
+        # --- END OF FIX ---
+        
+        # Create a string for the entire result record, ensuring it's always the same
+        canonical_record_string = json.dumps({
             "tool_name": r.tool_name,
             "result_type": r.result_type,
-            "result_data": data_to_hash,
+            "data": result_data_string, # Use our canonical string
             "severity": r.severity,
-        })
-    
-    canonical_json = json.dumps(results_list, sort_keys=True)
-    return hashlib.sha256(canonical_json.encode()).hexdigest()
+        }, sort_keys=True)
+        
+        all_results_canonical_strings.append(canonical_record_string)
 
+    # Sort the list of all result strings to handle cases where tools finish in a different order
+    all_results_canonical_strings.sort()
+
+    # Join the final list into one giant string to be hashed
+    final_string_to_hash = "".join(all_results_canonical_strings)
+    
+    return hashlib.sha256(final_string_to_hash.encode()).hexdigest()
 
 def run_automated_scans():
-    """
-    Fetches monitored assets, creates a "pending" job record for each,
-    and then runs the scan, updating the record. This now follows the
-    same two-step process as manual scans.
-    """
     logger.info("SCHEDULER: Starting automated scanning job...")
-    
     db_loop_session = SessionLocal()
     try:
         assets_to_scan = db_loop_session.query(models.MonitoredAsset).all()
@@ -96,17 +144,16 @@ def run_automated_scans():
         for asset in assets_to_scan:
             logger.info(f"SCHEDULER: Processing asset ID {asset.id} ('{asset.search_data}') for user {asset.user_id}")
             
-            # --- THIS IS THE CRITICAL FIX ---
-            # Step 1: Create the ScanJob record first to get a real scan_id.
             try:
                 scan_job = models.ScanJob.create(
+                    db=db_loop_session,
                     user_id=asset.user_id,
                     data_type=asset.data_type,
                     search_data=asset.search_data,
-                    status="pending", # Start as pending
+                    status="pending",
                     created_at=datetime.utcnow(),
                     scan_source="automated",
-                    custom_regex=None # Automated scans don't have custom regex
+                    custom_regex=None
                 )
                 if not scan_job:
                     raise Exception("Failed to create ScanJob in database.")
@@ -116,18 +163,15 @@ def run_automated_scans():
 
             except Exception as e:
                 logger.error(f"SCHEDULER: Failed to create job for asset {asset.id}. Error: {e}")
-                continue # Skip to the next asset
+                continue
 
-            # The ScanRequest object is still needed to pass data to the orchestrator.
             scan_request = ScanRequest(
                 data_type=asset.data_type,
                 search_data=asset.search_data,
                 user_id=asset.user_id
             )
-            # --- END OF FIX ---
             
             try:
-                # Step 2: Now call start_scan_job with the new scan_id.
                 start_scan_job(scan_request, scan_source="automated", scan_id=scan_id)
                 
                 logger.info(f"SCHEDULER: Scan completed for asset {asset.id}. Job ID: {scan_id}")
@@ -143,18 +187,17 @@ def run_automated_scans():
                 if new_hash != asset.previous_results_hash:
                     logger.warning(f"SCHEDULER: New findings detected for asset {asset.id}!")
                     models.Alert.create(
+                        db=db_loop_session,
                         asset_id=asset.id,
                         user_id=asset.user_id,
                         scan_id=scan_id,
                         message=f"New potential leaks found for '{asset.search_data}'."
                     )
-                    # Use the db_loop_session to update the asset
                     asset_to_update = db_loop_session.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset.id).first()
                     asset_to_update.previous_results_hash = new_hash
                 else:
                     logger.info(f"SCHEDULER: No new findings for asset {asset.id}.")
 
-                # Use the db_loop_session to update the asset
                 asset_to_update = db_loop_session.query(models.MonitoredAsset).filter(models.MonitoredAsset.id == asset.id).first()
                 asset_to_update.last_scanned_at = datetime.utcnow()
                 db_loop_session.commit()

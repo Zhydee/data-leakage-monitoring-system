@@ -13,3 +13,6 @@ requests==2.31.0
 apscheduler 
 slowapi 
 cachetools
+beautifulsoup4
+lxml
+sherlock-project

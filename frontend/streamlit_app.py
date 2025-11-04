@@ -571,6 +571,9 @@ def generate_scan_report_pdf(scan: dict, display_name_map: dict) -> bytes:
             pdf.cell(45, 6, display_detector, 1)
             pdf.cell(110, 6, display_file, 1)
             pdf.cell(20, 6, str(line), 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if len(findings) > 10:
+            pdf.set_font("Helvetica", "I", 8) # Italic font
+            pdf.cell(0, 6, f"...and {len(findings) - 10} more findings. See the web view for the full list.", 1, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(8)
 
     # HIBP (Email Breaches) Renderer
@@ -1031,42 +1034,46 @@ else:
         # --- The submission logic block ---
         if scan_button:
             if search_data:
-                # 1. Validate the user's input (this part is the same)
+                # 1. Validate the user's input
                 pattern = regex_patterns[data_type]
                 backend_data_type = backend_data_type_map[data_type]
                 
                 if not re.search(pattern, search_data.strip()):
                     st.error(f"❌ Input does not match the expected {data_type} format. Please check and try again.", icon="🚨")
                 else:
-                    # --- THIS IS THE NEW LOGIC THAT REPLACES THE BACKGROUND THREAD ---
-                    st.info("Initiating scan...", icon="⏳")
-
-                    # 2. Prepare the data for the scan
+                    # --- THIS IS THE CLEANED-UP LOGIC ---
+                    # Show a single, clear message BEFORE making the request.
+                    if data_type in ["Username", "GitHub Repository", "Email Address"]:
+                        st.info(f"✅ Scan for **{data_type}** initiated. This may take several minutes. You can safely navigate to other pages, and the results will appear in 'Scan History' when ready.", icon="⏳")
+                    else:
+                        st.success("✅ Scan initiated successfully! Please go to the 'Scan History' page to see the results shortly.", icon="🚀")
+                    
+                    # Prepare the data for the scan
                     payload = {"data_type": backend_data_type, "search_data": search_data.strip()}
                     
-                    # Add user_id if the user is logged in
                     if 'user' in st.session_state:
                         payload['user_id'] = st.session_state['user'].get('sub')
                     
                     try:
-                        # 3. Make a direct request to the backend to get the scan_id
+                        # Make the request to the backend
                         response = requests.post(f"{BACKEND_URL}/scan/start", json=payload, timeout=10)
 
-                        if response.status_code == 202: # Check for the 'Accepted' status code
+                        if response.status_code == 202:
                             scan_id = response.json().get("scan_id")
-                            
-                            # 4. CRITICAL STEP: If it's a guest, save the ID to the session
                             if 'user' not in st.session_state:
                                 st.session_state['last_guest_scan_id'] = scan_id
-
-                            st.success("✅ Scan initiated successfully!", icon="🚀")
-                            st.info("Please go to the 'Scan History' page to see the results shortly.", icon="ℹ️")
-                        
+                            # We add a small sleep to ensure the message is visible before the form clears.
+                            time.sleep(2)
                         else:
+                            # If the request fails, we clear the positive message and show an error.
+                            st.empty()
                             st.error(f"Failed to start scan. Server responded with: {response.status_code} - {response.text}")
 
                     except requests.exceptions.RequestException as e:
+                        # Clear the positive message and show a connection error.
+                        st.empty()
                         st.error(f"❌ Could not connect to the backend: {e}", icon="🔥")
+                    # --- END OF CLEANUP ---
 
             else:
                 st.warning("⚠️ Please enter data to search before starting a scan.", icon="❗️")
@@ -1194,7 +1201,6 @@ else:
                         )
         render_footer() 
 
-    # --- START OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
     elif selected == "Scan History":
         st.header("📊 Scan History")
         st.markdown("Review the enriched findings from your recent scans. Results from multiple tools are combined for better insights.")
@@ -1336,41 +1342,50 @@ else:
                         elif scan['data_type'] == 'email':
                             st.markdown("### 📧 Email Exposure Analysis")
                             
-                            hibp_result = results.get('hibp_emails')
-
+                            # --- Part 1: Display HIBP results with corrected logic ---
+                            hibp_result = results.get('hibp_emails', {})
+                            hibp_data = hibp_result.get("data", []) if isinstance(hibp_result, dict) else []
+                            
                             st.subheader("Data Breach Exposure (from HIBP)")
-                            if isinstance(hibp_result, dict) and isinstance(hibp_result.get("data"), list):
-                                hibp_data = hibp_result["data"]
-                                if not hibp_data:
-                                    st.success("✅ No public breaches found for this email by HIBP.")
-                                else:
-                                    st.metric(label="Breaches Found", value=len(hibp_data), delta_color="inverse")
-                                    st.error("🚨 Found in Public Data Breach", icon="🔥")
-                                    
-                                    for breach in hibp_data:
-                                        with st.container(border=True):
-                                            st.subheader(breach.get("Name", "Unknown Breach"))
-                                            tags_html = "".join([f"<span style='background-color:#ffebee; color:#c62828; padding: 3px 8px; border-radius:12px; margin-right:5px; font-size:0.85rem;'>{item}</span>" for item in breach.get("DataClasses", [])])
-                                            st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
+                            if hibp_data:
+                                st.metric(label="Found In", value=f"{len(hibp_data)} Breaches")
+                                st.error("This email was found in the databases of past company data breaches.", icon="🔥")
+                                for breach in hibp_data:
+                                    with st.container(border=True):
+                                        st.subheader(breach.get("Name", "Unknown Breach"))
+                                        tags_html = "".join([f"<span style='background-color:#ffebee; color:#c62828; padding: 3px 8px; border-radius:12px; margin-right:5px; font-size:0.85rem;'>{item}</span>" for item in breach.get("DataClasses", [])])
+                                        st.markdown(f"**Compromised Data:** {tags_html}", unsafe_allow_html=True)
+                            else:
+                                st.success("✅ Good News! This email was not found in any of the public data breaches checked by HIBP.")
 
-                                    # --- CONTEXTUAL RISK ANALYSIS ---
-                                    st.markdown("---")
-                                    st.error("🚨 What is the Risk? (CRITICAL)", icon="🔥")
-                                    st.markdown("""
-                                    This is a **CRITICAL** risk. Your email and other personal details from these breaches are likely available to hackers. They can use this information to:
-                                    - **Take Over Your Accounts:** If you reused the password from a breached site, they can access your other accounts (email, banking, social media).
-                                    - **Send Targeted Phishing Scams:** They can create very believable scam emails that appear to come from the breached company to trick you into giving away more information.
-                                    - **Commit Identity Theft:** With enough personal data, criminals can try to open new accounts or commit fraud in your name.
-                                    """)
+                            # --- Part 2: Display Google Search results (this part is the same) ---
+                            st.markdown("---")
+                            st.subheader("Where Your Email is Publicly Visible (from Google Search)")
+                            st.info("""
+                            **What is this?** Unlike data breaches, the results below show where your email is **currently visible** on public websites.
+                            """, icon="💡")
+                            
+                            google_result = results.get("google_dork", {})
+                            google_list = google_result.get("data", []) if isinstance(google_result, dict) else []
+                            render_google_results_block(results, scan['data_type'], scan['search_data'])
 
-                                    st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
-                                    st.markdown("""
-                                    **Follow these steps immediately:**
-                                    1.  **Change Your Passwords:** Go to the websites listed in the breaches above and change your password right away.
-                                    2.  **Change Passwords Everywhere Else:** If you used the same (or a similar) password on other websites, change them too. Hackers will try the leaked password on hundreds of other popular sites.
-                                    3.  **Enable Two-Factor Authentication (2FA):** This is your best defense. Turn on 2FA for all your important accounts (especially email). This means that even if a hacker has your password, they can't log in without a code from your phone.
-                                    4.  **Be Vigilant:** Be extra suspicious of any unexpected emails, especially those that ask you to click links or download attachments.
-                                    """)
+                            # --- Part 3: Combined Risk & Playbook with corrected logic ---
+                            if hibp_data or google_list:
+                                st.markdown("---")
+                                st.error("🚨 What is the Risk?", icon="🤔")
+                                st.markdown("""
+                                Your email address has been exposed, which creates two primary risks:
+                                - **From Data Breaches:** Criminals can use the leaked passwords from these breaches to try and take over your other accounts (like email, social media, and banking).
+                                - **From Public Exposure:** Your email can be collected by spammers and scammers, leading to a significant increase in targeted phishing attacks and unwanted junk mail.
+                                """)
+
+                                st.info("✅ What Should I Do? (Your Playbook)", icon="🛡️")
+                                st.markdown("""
+                                1.  **Change Passwords Immediately:** If your email was in a breach, change the password on that site and any other site where you reused it.
+                                2.  **Enable Two-Factor Authentication (2FA):** This is your best defense against account takeover.
+                                3.  **Remove Public Postings:** For any results found by the web scan, visit the links and delete or request removal of your email address.
+                                4.  **Be Vigilant:** Be extra suspicious of any unexpected emails that ask you to click links or provide personal information.
+                                """)
                             else:
                                 st.info("No HIBP results available for this scan.")
                                                 
@@ -1627,11 +1642,13 @@ else:
                                 response = requests.post(f"{BACKEND_URL}/monitoring/assets", json=payload)
                                 if response.status_code == 201:
                                     st.success(f"Successfully added '{asset_data}' to the monitoring list!")
-                                    st.rerun()
+                                    st.rerun() # This will now work correctly
                                 else:
                                     st.error(f"Failed to add asset: {response.text}")
-                            except Exception as e:
-                                st.error(f"An error occurred: {e}")
+                            
+                            # This is now more specific and will NOT catch the rerun exception
+                            except requests.exceptions.RequestException as e:
+                                st.error(f"An error occurred while connecting to the backend: {e}")
                     else:
                         st.warning("Please enter the data to monitor.")
                    
@@ -1756,6 +1773,16 @@ else:
                     margin-bottom: 1rem;
                     border-radius: 5px;
                 }
+                .pill {
+                    display: inline-block;
+                    margin: 4px 4px 4px 0;
+                    padding: 5px 12px;
+                    background-color: #e9ecef; /* A light gray that matches the sidebar */
+                    color: #495057; /* A darker gray for the text */
+                    border-radius: 15px;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                }
                 .step-icon {
                     font-size: 2.5rem;
                     margin-right: 1.5rem;
@@ -1869,7 +1896,7 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-
+       
         st.markdown("---")
         
         # --- Prominent Login for Guests ---
@@ -1903,8 +1930,7 @@ else:
             st.link_button("Check an Account on Semak Mule ➜", "https://semakmule.rmp.gov.my/")
 
         st.markdown("---")
-
-        # --- UPDATED CARD-BASED LAYOUT FOR LOCAL THREATS ---
+        
         st.subheader("Local Threats: What to Watch Out For in Malaysia")
         st.markdown("Scammers often use your leaked personal data—like your phone number or name—as a starting point. Here are some of the common ways they exploit that information in Malaysia.")
         
