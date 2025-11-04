@@ -1500,60 +1500,102 @@ else:
         render_footer()
 
 
-    # --- END OF THE CORRECTED AND FINAL "Scan History" BLOCK ---
     elif selected == "About Tools":
-        st.header("🛠️ Our OSINT Arsenal")
-        st.markdown("An overview of the powerful, open-source tools that drive our scanning engine.")
+        # Add the CSS for the "pill" badges
+        st.markdown("""
+        <style>
+            .pill {
+                display: inline-block;
+                margin: 4px 4px 4px 0;
+                padding: 5px 12px;
+                background-color: #e9ecef;
+                color: #495057;
+                border-radius: 15px;
+                font-size: 0.85rem;
+                font-weight: 500;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.header("🛠️ Our Technology & Your Trust")
+        st.markdown("Our platform uses powerful, open-source tools to find your data. We believe in transparency—here’s a simple breakdown of the 'digital detectives' we use and our commitment to your privacy.")
+
+        def render_pills(items):
+            pills_html = "".join([f"<span class='pill'>{item}</span>" for item in items])
+            st.markdown(pills_html, unsafe_allow_html=True)
+
+        # Revised tool information with refined titles
         tools_info = {
-            "🔑 TruffleHog": { 
-                "purpose": "Scans public GitHub repositories for exposed secrets.", 
-                "scans": ["API Keys & Tokens", "Passwords & Private Keys"] 
+            "🔑 Leaked Secrets in Code (TruffleHog)": {
+                "purpose": "Think of this as a specialized search engine for code. It scans public software projects on sites like GitHub to find sensitive information that was accidentally left behind, like passwords or API keys.",
+                "scans": ["API Keys", "Tokens", "Private Keys", "Passwords"],
+                "link": "https://github.com/trufflesecurity/trufflehog"
             },
-            "🌐 Google Custom Search": { 
-                "purpose": "Uses targeted search queries to find data indexed on the public web.", 
-                "scans": ["Full Name", "Phone Numbers", "IC Numbers"]
+            "📧 Compromised Accounts in Data Breaches (HIBP)": {
+                "purpose": "This tool checks your information against a massive, trusted library of past data breaches from thousands of hacked websites. It tells you if your account was part of a major leak.",
+                "scans": ["Leaked Emails", "Exposed Passwords"],
+                "link": "https://haveibeenpwned.com/"
             },
-            "🕵️ Sherlock": { 
-                "purpose": "Hunts down social media and forum accounts by username.", 
-                "scans": ["Social Media Profiles", "Forum Accounts"] 
+            "🕵️ Username & Social Media Footprints (Sherlock)": {
+                "purpose": "Like a detective checking for aliases, this tool takes a username and searches for matching public profiles across hundreds of social media sites, forums, and online communities.",
+                "scans": ["Social Media Profiles", "Forum Accounts", "Usernames"],
+                "link": "https://github.com/sherlock-project/sherlock"
             },
-            "📧 HIBP API": { 
-                "purpose": "Checks against a massive database of known public data breaches.", 
-                "scans": ["Leaked Emails", "Exposed Passwords"] 
+            "🌐 Publicly Exposed Information (Google Search)": {
+                "purpose": "We use the power of Google with special, advanced search techniques (often called 'Google Dorks') to find where your personal information might be publicly written down on websites, documents, or forums.",
+                "scans": ["Full Names", "Phone Numbers", "IC Numbers", "Email Addresses"],
+                "link": "https://support.google.com/websearch/answer/2466433"
             }
         }
+
+        # Card-based layout
         for tool, info in tools_info.items():
-            with st.expander(tool, expanded=False):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Purpose:**")
-                    st.markdown(f"<p style='color:#343A40;'>{info['purpose']}</p>", unsafe_allow_html=True)
-                with col2:
-                    st.markdown("**What it scans:**")
-                    for item in info['scans']:
-                        st.markdown(f"- {item}")
-        st.markdown("---")
+            with st.container(border=True):
+                st.subheader(tool)
+                st.write(info['purpose'])
+                st.markdown("**Looks for:**")
+                render_pills(info['scans'])
+                st.link_button("Learn More About This Tool ➜", info['link'], use_container_width=True)
         
-        st.subheader("⚙️ How Our Scanning Works")
+        st.markdown("---")
+
+        # Refined "How it Works" section
+        st.subheader("⚙️ From Scan to Solution: How It Works")
         col1, col2, col3 = st.columns(3, gap="large")
         with col1:
-            st.markdown("**1. Input Processing**")
-            st.markdown("- Validates input\n- Selects tools")
+            st.markdown("<h5><b>1. You Start the Scan</b></h5>", unsafe_allow_html=True)
+            st.markdown("You provide a piece of information, like your email. Our system then chooses the best 'digital detectives' for that specific job.")
         with col2:
-            st.markdown("**2. Parallel Scanning**")
-            st.markdown("- Runs tools simultaneously\n- Monitors progress")
+            st.markdown("<h5><b>2. Our System Investigates</b></h5>", unsafe_allow_html=True)
+            st.markdown("The tools run in a secure background process, searching public websites, code repositories, and breach data to find any matches.")
         with col3:
-            st.markdown("**3. Results Analysis**")
-            st.markdown("- Aggregates findings\n- Removes duplicates")
+            st.markdown("<h5><b>3. You Receive Actionable Results</b></h5>", unsafe_allow_html=True)
+            st.markdown("We gather all findings into a single, easy-to-read report in your 'Scan History', complete with simple advice on what to do next.")
+        
         st.markdown("---")
-        st.subheader("🔒 Security & Privacy")
+
+        # Refined "Security & Privacy" section
+        st.subheader("🔒 Your Privacy is Our #1 Priority")
+        st.markdown("We built this system to *improve* your security, not risk it. Here are our promises to you:")
         col1, col2 = st.columns(2, gap="large")
         with col1:
-            st.markdown("**Data Protection:**")
-            st.markdown("- Scans are encrypted\n- No permanent storage\n- Auto-delete results")
+            st.markdown("<h5><b>Our Data Privacy Promise</b></h5>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                - **Your History is Not Permanent:** To protect your long-term privacy, an automated job runs daily to **permanently delete** any scan results older than 14 days.
+                - **Your Passwords are Handled with Extreme Care:** When you scan a password, we use a privacy-preserving technique. **Your full password is never sent over the internet.**
+                - **Your Results Belong to You:** Your scan history and monitored assets are strictly tied to your authenticated user session. No other users can see your data.
+                """
+            )
         with col2:
-            st.markdown("**Ethical Scanning:**")
-            st.markdown("- Public sources only\n- Respects limits\n- No illegal acts")
+            st.markdown("<h5><b>Our Ethical Scanning Promise</b></h5>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                - **We Only Look in Public Places:** Our tools only search for data that is already available to anyone on the public internet.
+                - **We Do Not Hack:** This system will never attempt to break into any private computer or database.
+                - **This is a Tool for Defense:** Our goal is to help you see what's already out there so you can protect yourself.
+                """
+            )
         render_footer()
 
     elif selected == "Monitoring":
@@ -1706,62 +1748,88 @@ else:
     elif selected == "FAQ":
         st.header("❓ Frequently Asked Questions")
         st.markdown("Find answers to common questions about our platform, security, and how to interpret your results.")
-        # --- NEW CATEGORY ---
-        st.subheader("🚨 Understanding Your Results")
-        with st.expander("**What should I do if I find my data has been leaked?**", expanded=True): # Expanded by default
-            st.markdown("""
-            Finding your data has been exposed can be stressful, but taking swift action is key. Here are the recommended steps:
-            - **1. Change Compromised Credentials:** If a password or username was leaked, change that password **immediately** on every site where you have used it. Prioritize critical accounts like email and banking.
-            - **2. Revoke and Regenerate Keys:** If an API key or token was exposed, revoke it immediately in that service's dashboard and generate a new one.
-            - **3. Enable Two-Factor Authentication (2FA):** For any affected account, enable 2FA (or MFA). This is one of the most effective ways to secure an account even if the password is known.
-            """)
-        with st.expander("**Why do some scans show “No Leaks Found” even if I suspect an exposure?**"):
-            st.markdown("""
-            There are a few reasons why a scan might not find something you suspect is out there:
-            - **Not Yet Publicly Indexed:** The data leak may have occurred, but it might not have been discovered and indexed in the public breach databases that our tools scan.
-            - **Outside Our Scan Scope:** The leak could be on a private forum, a marketplace on the dark web, or another source that our public-facing OSINT tools do not cover.
-            - **Data Has Been Removed:** The exposed data may have been found and removed from the public site where it was posted (like Pastebin).
-            We recommend rescanning periodically, as databases are constantly updated with new information.
-            """)
-        st.subheader("🛡️ Security & Privacy")
-        with st.expander("**Is it safe to enter my password or API key here?**"):
-            st.markdown("""
-            **Yes.** We prioritize your security and privacy above all else. Here’s how we handle sensitive data:
-            - **Passwords:** We **never** send your actual password to any server. We use a technique called "k-Anonymity" (the same model used by the trusted Have I Been Pwned service). This allows us to check for a breach without ever exposing the full password you entered.
-            - **API Keys & Other Secrets:** Your input is saved to your private Scan History so you can review it later. This data is linked only to your user session, is never shared, and is **automatically and permanently deleted from our system after 14 days.**
-            Our fundamental goal is to help you find *existing* public leaks, not create new ones.
-            """)
-        with st.expander("**Where does the system search for my data?**"):
-            st.markdown("""
-            The system scans **only publicly available sources**. This includes places like:
-            - **Public Code Repositories:** Searching sites like GitHub for exposed API keys and secrets (via TruffleHog).
-            - **Public Web Pages:** Using targeted searches to find indexed information on websites and public documents (via Google Custom Search).
-            - **Social Media & Forums:** Searching for public profiles across hundreds of sites that match a username (via Sherlock).
-            - **Known Data Breaches:** Checking against a large, aggregated database of credentials from past public breaches (via HIBP).
 
-            We **do not** access private databases or systems. All scans are performed within the bounds of ethical open-source intelligence gathering.
-            """)
-        with st.expander("**Do you store my search history or results?**"):
+        # --- Category 1: Understanding Your Results ---
+        st.subheader("🚨 Interpreting Your Scan Results")
+
+        with st.expander("**What's the first thing I should do if my data is found in a leak?**", expanded=True):
             st.markdown("""
-            Yes, the results of your scans are stored in a secure database so you can review them later in the **Scan History** tab. This data is linked only to your user session and is never made public or shared.
-
-            To protect your privacy, this data is not stored indefinitely. **All scan results are automatically and permanently deleted from our system after 14 days.**
-
-            This 14-day period provides a convenient window for you to review your findings, while ensuring your search history is not retained long-term, prioritizing your security and privacy.
+            Finding your data can be stressful, but acting quickly is the most important thing. Prioritize these steps:
+            1.  **Change Passwords Immediately:** If a password was found, change it on that site and on **any other site** where you might have used it. Start with your most important accounts, like your primary email and banking.
+            2.  **Revoke Leaked Secrets:** If an API key or a secret token was found, log into that service's dashboard, delete or revoke the leaked key, and generate a new one.
+            3.  **Enable Two-Factor Authentication (2FA):** This is your best defense. Enabling 2FA means that even if a hacker has your password, they can't log in without a temporary code from your phone or an app.
             """)
+
+        with st.expander("**What’s the difference between a 'Data Leak' and a 'Data Breach'?**"):
+            st.markdown("""
+            They are closely related but have a key difference:
+            - A **Data Breach** is the result of a targeted attack. Think of a burglar breaking into a company's office to steal their files. Hackers actively break into a secure system to steal data.
+            - A **Data Leak** is the result of an accident or mistake. Think of a company accidentally leaving a sensitive file on a public park bench. The information is exposed, but not necessarily through a malicious attack.
+            
+            This tool helps you find your information in both scenarios.
+            """)
+
+        with st.expander("**Why didn't the scan find a leak I was expecting?**"):
+            st.markdown("""
+            There are a few common reasons why a scan might come back clean:
+            - **The leak isn't public yet:** A data breach may have happened, but the stolen data might still be private and not yet posted online.
+            - **The leak is on the Dark Web:** The data might be for sale on a private hacker forum or marketplace that our public-facing tools cannot access.
+            - **The data has been removed:** The information may have been discovered and taken down from the public website where it was originally posted.
+            """)
+
+        with st.expander("**I received a suspicious call or message. Is it related?**"):
+            st.markdown("""
+            It's very likely. Scammers in Malaysia frequently use leaked phone numbers and names to make their scams more convincing. Remember these rules:
+            - **Hang Up on Impersonators:** If you get an unexpected call from someone claiming to be from the police (PDRM), LHDN, or a court, and they ask for money or personal details, **hang up**. Authorities do not operate this way.
+            - **Never Share Your Codes:** Never, under any circumstances, share a 6-digit TAC / OTP code that you receive via SMS with anyone.
+            - **Verify Before You Pay:** Before transferring money to any new person or seller, check their bank account or phone number on the official **PDRM Semak Mule portal**. This will tell you if the account has been reported for scams.
+            """)
+
+        # --- Category 2: Security & Privacy ---
+        st.subheader("🛡️ Your Security & Our Promise")
+
+        with st.expander("**Is it safe to enter my password or secrets into your scanner?**"):
+            st.markdown("""
+            **Yes.** We designed the system with your privacy as the top priority.
+            - **For Passwords:** We use a privacy-preserving technique called "k-Anonymity." Your full password **never** leaves your computer to be sent to our server or any other service.
+            - **For Other Data:** Your scan history is stored securely, linked only to your private account, and is **automatically and permanently deleted** from our system after 14 days.
+            """)
+            
+        with st.expander("**Where does your system look for my data?**"):
+            st.markdown("""
+            Our system only searches **publicly available sources**. This is a technique known as Open-Source Intelligence (OSINT). We do **not** hack into or access any private systems. The sources include:
+            - Public websites and documents (via Google Search)
+            - Known data breach lists (via HIBP)
+            - Public software projects on GitHub (via TruffleHog)
+            - Social media and forum profiles (via Sherlock)
+            """)
+
         with st.expander("**Is this service legal to use?**"):
             st.markdown("""
-            **Yes.** This system exclusively uses **Open-Source Intelligence (OSINT)** tools and techniques. This means it only searches for, aggregates, and displays data that is **already publicly available** on the internet.
-            It does not perform any hacking, cracking, or unauthorized access of any kind into private systems. It is a tool for discovering your public footprint, not for malicious activity.
+            **Yes, 100%.** This service operates like a specialized search engine. It only finds and organizes data that is already publicly visible on the internet and does not perform any hacking or unauthorized access of any kind.
             """)
-        st.subheader("⚙️ Using the Scanner")
-        with st.expander("**Why did my scan take a long time?**"):
-            st.markdown("Some scans, especially for general data types like API keys, require searching vast sources like all of public GitHub. This can naturally take several minutes. Scans for more specific data types, like checking a password against a breach list, are usually much faster.")
-        with st.expander("**What do I do if a tool returns an error?**"):
-            st.markdown("Occasionally, a third-party service that a tool relies on may be temporarily unavailable. If you receive an error, we recommend waiting a few minutes and trying the scan again. If the problem persists, it may be an issue with the specific open-source tool itself.")
-        render_footer() 
+
+        # --- Category 3: Using the System ---
+        st.subheader("⚙️ About The System")
+
+        with st.expander("**Why do some scans take several minutes to complete?**"):
+            st.markdown("""
+            The time a scan takes depends on the depth of the search.
+            - **Fast Scans (a few seconds):** Checking a password or email against a known list of breaches is very quick.
+            - **Slower, Deeper Scans (a few minutes):** Searching an entire GitHub repository for secrets (TruffleHog) or checking a username against hundreds of websites (Sherlock) is a much bigger job and naturally takes longer to complete.
+            """)
+
+        with st.expander("**What should I do if a scan shows an error?**"):
+            st.markdown("""
+            Occasionally, one of the public services that our tools rely on might be temporarily unavailable. If you see an error:
+            1.  The best first step is to **wait a few minutes and try the scan again.**
+            2.  If the problem continues, it is likely a temporary issue with the external tool itself, which usually resolves on its own.
+            """)
+        
+        render_footer()
 
     elif selected == "Homepage":
+        # --- Combined CSS Block for all homepage styles ---
         st.markdown("""
             <style>
                 .step-container {
@@ -1777,8 +1845,8 @@ else:
                     display: inline-block;
                     margin: 4px 4px 4px 0;
                     padding: 5px 12px;
-                    background-color: #e9ecef; /* A light gray that matches the sidebar */
-                    color: #495057; /* A darker gray for the text */
+                    background-color: #e9ecef;
+                    color: #495057;
                     border-radius: 15px;
                     font-size: 0.85rem;
                     font-weight: 500;
@@ -1798,27 +1866,27 @@ else:
             </style>
         """, unsafe_allow_html=True)
 
+        # --- Section 1: The Hook ---
         st.markdown("""
             <div style='text-align: center; background: linear-gradient(135deg, #f39c12, #e67e22); border-radius:10px; padding: 2rem; margin-bottom:1.5rem;'>
                 <h1 style='color: #FFFFFF;'>Is Your Digital Life Truly Private?</h1>
-                <p style='color: #FFFFFF; font-size: 1.15rem;'>Let's explore what 'data leakage' means and how to protect the information you share online.</p>
+                <p style='color: #FFFFFF; font-size: 1.15rem;'>Understand what 'data leakage' means and learn how to protect the information you share online.</p>
             </div>
         """, unsafe_allow_html=True)
 
-        # --- Section 1: What Exactly is a Data Leak? ---
-        st.subheader("🤔 What Exactly is a Data Leak?")
-        with st.expander("Imagine a data leak is like dropping your wallet in a crowded place... it's the digital version of that."):
+        # --- Section 2: What is a Data Leak? ---
+        st.subheader("🤔 What Exactly Is a Data Leak?")
+        with st.expander("Imagine a data leak as dropping your wallet in a crowded place — except it’s digital."):
             st.markdown("""
-            It means your **private information** (like an email address, password, or phone number) has been unintentionally exposed on the public internet.
+            It means that your private information (such as an email address, password, or phone number) has been unintentionally exposed on the public internet.
 
-            Once it's out there, anyone—including criminals—can find and use it. This is why understanding your digital footprint is so important.
+            Once it’s exposed, anyone — including cybercriminals — can find and misuse it. This is why protecting your online identity and understanding your digital footprint is so important.
             """)
         st.markdown("---")
 
-        # --- Section 2: How a Small Leak Becomes a Big Problem ---
-        st.subheader("Domino Effect: How a Small Leak Becomes a Big Problem")
-        st.info("Click on the tabs below to see how a single piece of your data can be exploited.")
-
+        # --- Section 3: The Domino Effect ---
+        st.subheader("How a Small Leak Becomes a Big Problem")
+        st.info("A single piece of leaked data can start a chain reaction. See how criminals can exploit it:")
 
         email_tab, phone_tab, password_tab = st.tabs(["**With Your Email Address**", "**With Your Phone Number**", "**With a Leaked Password**"])
 
@@ -1899,117 +1967,84 @@ else:
        
         st.markdown("---")
         
-        # --- Prominent Login for Guests ---
+        # --- Section 4: The Targets ---
+        st.subheader("🎯 What Data Are Attackers Looking For?")
+        st.markdown(
+            "Cybercriminals are primarily interested in any data that can be used for identity theft, financial fraud, or gaining access to your accounts. This often includes:"
+        )
+        st.markdown(
+            "<span class='pill'>Email Addresses</span><span class='pill'>Phone Numbers</span><span class='pill'>Passwords</span><span class='pill'>Full Names</span><span class='pill'>IC (MyKad) Numbers</span><span class='pill'>Home Addresses</span><span class='pill'>Bank Account Numbers</span><span class='pill'>Credit Card Details</span><span class='pill'>OTP / TAC Codes</span>", unsafe_allow_html=True
+        )
+        st.markdown("---")
+
+        # --- Section 5: Local Threats ---
+        st.subheader("Local Threats: Common Scams in Malaysia")
+        st.markdown("Scammers often use your leaked personal data as a starting point. Here are some of the common ways they exploit that information here at home.")
+        
+        col1, col2 = st.columns(2, gap="large")
+        with col1:
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col: st.image("assets/stats.png", width=48)
+                with title_col: st.markdown("<h5><b>Fake Job & Investment Scams</b></h5>", unsafe_allow_html=True)
+                st.markdown("""You get an unsolicited offer on WhatsApp for an easy, high-paying job. They pay you a little at first to build trust, then ask you to pay for an "upgrade" to earn more, which you will lose. \n\n**Remember:** Be wary of offers that seem too good to be true.""")
+        with col2:
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col: st.image("assets/otp.png", width=48)
+                with title_col: st.markdown("<h5><b>The TAC / OTP Code Scam</b></h5>", unsafe_allow_html=True)
+                st.markdown("""Someone asks you to forward a 6-digit code they "accidentally" sent to your number. In reality, that is the login code for **YOUR** account. \n\n**Remember: NEVER** share a 6-digit code from an SMS with anyone. It is for your eyes only.""")
+
+        col3, col4 = st.columns(2, gap="large")
+        with col3:
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col: st.image("assets/phone_scam.png", width=48)
+                with title_col: st.markdown("<h5><b>Impersonation Phone Scams</b></h5>", unsafe_allow_html=True)
+                st.markdown("""Scammers often pretend to be from LHDN, PDRM, or PosLaju, claiming you owe taxes or are linked to a crime. \n\n**Remember:** Authorities **NEVER** ask for money transfers to personal accounts over the phone. If a call feels wrong, hang up and call their official hotline.""")
+        with col4:
+            with st.container(border=True):
+                icon_col, title_col = st.columns([1, 5])
+                with icon_col: st.image("assets/Beware_ic.png", width=48)
+                with title_col: st.markdown("<h5><b>Your IC Number (MyKad)</b></h5>", unsafe_allow_html=True)
+                st.markdown("""Scammers use your name and IC number to impersonate you or make their scams more convincing. \n\n**Remember:** Never post a photo of your MyKad online and only provide it to trusted, official organizations when absolutely necessary.""")
+        
+        st.markdown("---")
+
+        # --- Section 6: The Call to Action ---
         if 'user' not in st.session_state:
             st.subheader("Ready to Check Your Own Digital Footprint?")
             with st.container(border=True):
                 st.markdown("#### Sign in to use our free scanner.")
-                st.markdown("You can check your email, username, phone number, and more against public data leaks. Get a private dashboard, view detailed reports, and receive simple advice to improve your security.")
+                st.markdown("Check your email, username, phone number, and more against public data leaks. Get a private dashboard, view detailed reports, and receive simple advice to improve your security.")
                 auth_url = get_authorization_url()
                 st.link_button("Sign in to Scan Now", auth_url, use_container_width=True)
             st.markdown("---")
         
-        # --- How to Protect Yourself Section (Now 4 Steps) ---
-        st.subheader("🛡️ How You Can Protect Yourself: 4 Simple Steps")
-        with st.expander("**Step 1: Use a Password Manager (Most Important)**"):
-             st.markdown("""
-            ✅ This is the single most effective thing you can do for your online security. A password manager creates and remembers strong, unique passwords for every site, so you don't have to.
-            """)
-        with st.expander("**Step 2: Enable Two-Factor Authentication (2FA)**"):
-            st.markdown("""
-            ✅ This is your security backup. It requires a code from your phone to log in. Even if a hacker has your password, they can't get into your account without your phone.
-            """)
-        with st.expander("**Step 3: Think Before You Click and Share**"):
-            st.markdown("""
-            ✅ This is about being careful. Be suspicious of urgent emails or texts, and check your social media privacy settings to avoid sharing sensitive data publicly.
-            """)
-        with st.expander("**Step 4 (Local Tip): Verify Accounts with 'Semak Mule'**"):
-            st.markdown("""
-            ✅ Before you transfer money to an unknown person or online seller, check their bank account or phone number on the PDRM's **Semak Mule portal**. It is a free, official tool that tells you if an account has been reported for scam activities.
-            """)
+        # --- Section 7: Long-Term Prevention ---
+        st.subheader("🛡️ Building Your Digital Defenses: 4 Key Habits")
+        with st.expander("**1. Use a Password Manager (This is the most important habit)**"):
+             st.markdown("""A password manager is like a secure vault for your digital life. It creates and remembers a strong, unique password for every website you use, so you don't have to.""")
+        with st.expander("**2. Enable Two-Factor Authentication (2FA)**"):
+            st.markdown("""This is your security backup. It requires a temporary code from your phone or an app to log in, stopping a hacker even if they have your password.""")
+        with st.expander("**3. Be Skeptical: Think Before You Click and Share**"):
+            st.markdown("""Treat urgent or unexpected emails and texts with suspicion. On social media, review your privacy settings regularly to control who sees your information.""")
+        with st.expander("**4. Use Local Tools: Check with 'Semak Mule'**"):
+            st.markdown("""Before you transfer money to an unknown person or online seller in Malaysia, check their bank account or phone number on the PDRM's **Semak Mule portal**. It’s a free, official tool that tells you if an account has been reported for scam activities.""")
             st.link_button("Check an Account on Semak Mule ➜", "https://semakmule.rmp.gov.my/")
 
         st.markdown("---")
-        
-        st.subheader("Local Threats: What to Watch Out For in Malaysia")
-        st.markdown("Scammers often use your leaked personal data—like your phone number or name—as a starting point. Here are some of the common ways they exploit that information in Malaysia.")
-        
-        # --- ROW 1 of cards ---
-        col1, col2 = st.columns(2, gap="large")
 
-        with col1:
-            with st.container(border=True):
-                icon_col, title_col = st.columns([1, 5])
-                with icon_col:
-                    st.image("assets/stats.png", width=48)
-                with title_col:
-                    st.markdown("<h5><b>Fake Job & Investment Scams</b></h5>", unsafe_allow_html=True)
-
-                st.markdown("""
-                You get an unsolicited offer on WhatsApp for an easy, high-paying job. They pay you a little at first to build trust, then ask you to pay for an "upgrade" to earn more, which you will lose.
-                
-                **Remember:** Be wary of offers that seem too good to be true.
-                """)
-
-        with col2:
-            with st.container(border=True):
-                icon_col, title_col = st.columns([1, 5])
-                with icon_col:
-                    st.image("assets/Beware_ic.png", width=48)
-                with title_col:
-                    st.markdown("<h5><b>Your IC Number (MyKad)</b></h5>", unsafe_allow_html=True)
-                
-                st.markdown("""
-                Scammers use your name and IC number to impersonate you or make their scams more convincing.
-                
-                **Remember:** Never post a photo of your MyKad online and only provide it to trusted, official organizations when absolutely necessary.
-                """)
-
-        # --- ROW 2 of cards ---
-        col3, col4 = st.columns(2, gap="large")
-
-        with col3:
-            with st.container(border=True):
-                icon_col, title_col = st.columns([1, 5])
-                with icon_col:
-                    st.image("assets/phone_scam.png", width=48)
-                with title_col:
-                    st.markdown("<h5><b>Impersonation Phone Scams</b></h5>", unsafe_allow_html=True)
-                
-                st.markdown("""
-                Scammers often pretend to be from LHDN, PDRM, or PosLaju, claiming you owe taxes or are linked to a crime.
-
-                **Remember:** Authorities **NEVER** ask for money transfers to personal accounts over the phone. If a call feels wrong, hang up and call their official hotline.
-                """)
-
-        with col4:
-            with st.container(border=True):
-                icon_col, title_col = st.columns([1, 5])
-                with icon_col:
-                    st.image("assets/otp.png", width=48)
-                with title_col:
-                    st.markdown("<h5><b>The TAC / OTP Code Scam</b></h5>", unsafe_allow_html=True)
-                
-                st.markdown("""
-                Someone asks you to forward a 6-digit code they "accidentally" sent to your number. In reality, that is the login code for **YOUR** account.
-                
-                **Remember: NEVER** share a 6-digit code from an SMS with anyone. It is for your eyes only.
-                """)
-        
-        st.markdown("---")
-
-        # --- Get Help from Malaysian Authorities ---
+        # --- Section 8: Official Help ---
         st.subheader("Get Help from Malaysian Authorities")
         st.markdown("If you've found your personal data exposed online, you can report it to the official channels below to request takedowns and file complaints.")
 
         col1, col2 = st.columns(2, gap="large")
-
         with col1:
             with st.container(border=True):
                 st.image("assets/cybersecurity_logo.png", width=90)
                 st.markdown("CyberSecurity Malaysia provides the **Cyber999 Help Centre** for you to report online security incidents, including data leaks, identity theft, and harassment.")
                 st.link_button("Report to Cyber999 ➜", "https://www.mycert.org.my/cyber999")
-
         with col2:
             with st.container(border=True):
                 st.image("assets/jpdp_logo.png", width=90)
@@ -2018,7 +2053,7 @@ else:
 
         st.markdown("---")
 
-        # --- Footer sections ---
+        # --- Final Trust-Building Sections ---
         st.subheader("🛠️ Powered by Leading Open-Source Tools")
         st.markdown("""
         Our system integrates a suite of powerful OSINT tools to provide comprehensive coverage:

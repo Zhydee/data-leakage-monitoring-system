@@ -80,15 +80,16 @@ app.add_middleware(
 
 app.include_router(scan.router, prefix="/scan")
 app.include_router(history.router)
-# --- The monitoring router ---
 app.include_router(monitoring.router, prefix="/monitoring")
 
 @app.get("/")
-async def root():
+@limiter.limit("10/minute") # Apply the rate limit
+async def root(request: Request): # Add request: Request
     return {"message": "Data Leakage Monitor System is running"}
 
 @app.get("/health")
-async def health_check():
+@limiter.limit("10/minute") # Apply the rate limit
+async def health_check(request: Request): # Add request: Request
     return {"status": "healthy", "service": "data-leakage-monitor-system"}
 
 @app.get("/supported-data-types")
